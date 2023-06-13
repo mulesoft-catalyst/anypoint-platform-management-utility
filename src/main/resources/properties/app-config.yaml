@@ -1,0 +1,53 @@
+http:
+  host: "0.0.0.0"
+  port: "8081"
+parallel:
+  foreach:
+    maxConcurrency: "25"
+    apiTimeout: "60000"    
+anypoint:
+  platform:
+    designcenter:
+      branch: "master"
+    runtimemanager:
+      application:
+        suffix: "-m"
+    api:
+      host: "anypoint.mulesoft.com"
+      port: "443"
+      timeout: "600000"
+      retry:
+        count: "20"
+        interval: "30000"
+      path:
+        profile: "/accounts/api/me"
+        hierarchy: "/accounts/api/organizations/{organizationId}/hierarchy"
+        environments: "/accounts/api/organizations/{organizationId}/environments"
+        anypointmq:
+          destinations: "/mq/admin/api/v1/organizations/{organizationId}/environments/{environmentId}/regions/{regionId}/destinations"
+          bindings: "/mq/admin/api/v1/organizations/{organizationId}/environments/{environmentId}/regions/{regionId}/bindings"
+          clients: "/mq/admin/api/v1/organizations/{organizationId}/environments/{environmentId}/clients"
+        apimanager:
+          apis: "/apimanager/api/v1/organizations/{organizationId}/environments/{environmentId}/apis"
+          contract-approve: "/apiplatform/repository/v2/organizations/{organizationId}/apis/{apiId}/versions/{apiVersionId}/contracts/{contractId}/approve"
+          contract-reject: "/apiplatform/repository/v2/organizations/{organizationId}/apis/{apiId}/versions/{apiVersionId}/contracts/{contractId}/reject"
+        applications:
+          check-domain: "/cloudhub/api/applications/domains/{domain}"
+          cloudhub: "/cloudhub/api/v2/applications"
+          cloudhub-status: "/cloudhub/api/applications/{domain}/status"
+          download-file: "/cloudhub/api/organizations/{organizationId}/environments/{environmentId}/applications/{domain}/download/{filename}"
+          rtf: "/amc/application-manager/api/v2/organizations/{organizationId}/environments/{environmentId}/deployments"
+        designcenter: 
+          projects: "/designcenter/api-designer/projects"
+          rename: "/designcenter/api-designer/projects/{projectId}/rename"
+          lock: "/designcenter/api-designer/projects/{projectId}/branches/{branch}/acquireLock"
+          save: "/designcenter/api-designer/projects/{projectId}/branches/{branch}/save"
+          files: "/designcenter/api-designer/projects/{projectId}/branches/{branch}/files"
+          file-content: "/designcenter/api-designer/projects/{projectId}/branches/{branch}/files/v2/{filePath}"
+        exchange:
+          asset-latest: "/exchange/api/v2/assets/{groupId}/{assetId}/asset"
+          asset-delete: "/exchange/api/v2/assets/{groupId}/{assetId}/{version}"
+          asset: "/exchange/api/v2/assets/{groupId}/{assetId}/{version}/asset"
+          portal: "/exchange/api/v2/assets/{groupId}/{assetId}/{version}/portal"
+          publish: "/exchange/api/v2/organizations/{organizationId}/assets/{groupId}/{assetId}/{version}"
+          status: "/exchange/api/v2/assets/{groupId}/{assetId}/{version}/status"

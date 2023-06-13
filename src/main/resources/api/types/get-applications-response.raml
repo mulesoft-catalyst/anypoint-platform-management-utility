@@ -1,0 +1,42 @@
+#%RAML 1.0 DataType
+description: The applications status and information for  the corresponding business group and environments
+type: object
+properties:
+  applications:
+    type: array
+    items:
+      type: object
+      properties:
+        name: 
+          type: string
+          description: The name of the application
+          example: "api-01"
+        businessGroup: 
+          type: string
+          description: The name of the Business Group where the API is deployed
+          example: "MuleSoft"
+        environment:
+          type: string
+          description: The Name of the Environment where the API is deployed
+          example: "Development"
+        status:
+          type: string
+          description: The status of the application
+          example: "Running"
+        runtimeVersion:
+          type: string
+          description: The version of the Mule Runtime for the application
+          example: "4.4.0"
+        instanceCount:
+          type: number
+          description: The number of running instances of the application. CloudHub - Number of workers, RTF - Number of replicas
+          example: 1
+        cpu:
+          type: string
+          description: The amount of vCPU reserved for RTF/ vCore for CloudHub
+          example: "0.1 vCore"
+        memory:
+          type: string
+          description: The amount of memory allocated in MB
+          example: "1000 MB"
+

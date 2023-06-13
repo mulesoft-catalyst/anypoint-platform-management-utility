@@ -1,0 +1,427 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd 
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+
+	<sub-flow name="get-and-patch-RTF-applications-common-sub-flow" doc:id="ccc11377-b4ae-4cff-b5eb-0923bed2e375" >
+		<parallel-foreach doc:name="Parallel For Each" doc:id="faa7faf0-07af-44ac-840b-dd66fe4f32d0" collection="#[payload.businessGroups]" maxConcurrency="${parallel.foreach.maxConcurrency}">
+			<set-variable value="#[payload.name]" doc:name="Set Business Group Name" doc:id="58f94f6f-c55e-45fc-9229-b1946d204d69" variableName="bgName" />
+			<set-variable value="#[payload.id]" doc:name="Set Business Group Id" doc:id="d7f76f99-0160-4bde-92e9-fa870e01b4e7" variableName="bgId" />
+			<parallel-foreach doc:name="Parallel For Each" doc:id="fc1ddfaf-8b71-47f7-8d2e-6691d8c66329" collection="#[payload.environments]" maxConcurrency="${parallel.foreach.maxConcurrency}">
+				<set-variable value="#[payload.name]" doc:name="Set Environment Name" doc:id="07333fea-3776-4841-b769-76c0ed26e33d" variableName="envName" />
+				<set-variable value="#[payload.id]" doc:name="Set Environment Id" doc:id="5f5044ae-59de-4432-9036-8c445c4c0916" variableName="envId" />
+				<http:request method="GET" doc:name="Get RTF Applications" doc:id="00e1af9c-0460-419b-9788-afab8d58c781" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.applications.rtf}">
+					<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+					<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.bgId,
+	"envId": vars.envId
+}]]]></http:uri-params>
+					<http:response-validator>
+						<http:success-status-code-validator values="200..499" />
+					</http:response-validator>
+				
+</http:request>
+				<choice doc:name="Choice" doc:id="46856d36-4f56-4b97-af7e-c84c3d10baa9">
+					<when expression="#[attributes.statusCode == 200]">
+						<parallel-foreach doc:name="Parallel For Each" doc:id="9fcdba6f-aa89-40a0-ac16-f41968c73656" collection="#[%dw 2.0&#10;output application/java&#10;---&#10;payload.items filter ((item, index) -&gt;  &#10;    ((sizeOf(vars.applicationFilter default []) == 0) or (vars.applicationFilter contains item.name)) &#10;)]" maxConcurrency="${parallel.foreach.maxConcurrency}">
+							<http:request method="GET" doc:name="Get RTF Application Details" doc:id="911e190a-8272-4b5c-b81d-46923d0e069a" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.applications.rtf}/{deploymentId}" responseTimeout="${parallel.foreach.apiTimeout}">
+								<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+								<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.bgId,
+	"environmentId": vars.envId,
+	"deploymentId": payload.id
+}]]]></http:uri-params>
+							</http:request>
+							<choice doc:name="Choice" doc:id="12b0e403-c9a6-49e2-a45f-cc01ecd97279" >
+								<when expression="#[upper(vars.requestMethod) == 'PATCH']">
+									<set-variable value="#[payload]" doc:name="Set Original App Payload" doc:id="b0c0e736-deb3-4e18-b839-31de7a3358b3" variableName="originalAppPayload"/>
+									<ee:transform doc:name="Prepare Patch App Request" doc:id="7c6e6287-dfd8-4050-995b-a4e846e7e1f8">
+										<ee:message>
+											<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload update {
+	case .target.deploymentSettings.runtimeVersion -> 
+		(vars.inputPayload.runtimeVersion filter 
+			$.from == (payload.target.deploymentSettings.runtimeVersion splitBy ":")[0])[0].to
+}]]></ee:set-payload>
+										</ee:message>
+									</ee:transform>
+									<choice doc:name="Choice" doc:id="03dd3814-3d45-4f15-9ad6-b03c9993e3d2" >
+										<when expression="#[vars.originalAppPayload != payload]">
+											<http:request method="PATCH" doc:name="Patch RTF Application" doc:id="aa26da6b-8162-490d-a94a-0900919314b2" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.applications.rtf}/{deploymentId}">
+										<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+										<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.bgId,
+	"environmentId": vars.envId,
+	"deploymentId": payload.id
+}]]]></http:uri-params>
+										<http:response-validator>
+											<http:success-status-code-validator values="200..599" />
+										</http:response-validator>
+									</http:request>
+										</when>
+									</choice>
+								</when>
+							</choice>
+							<ee:transform doc:name="Transform App Info" doc:id="d979ec0d-4f66-4dc3-b89b-b55d17d440cb">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+{
+	"name": payload.name default vars.originalAppPayload.name,
+	"businessGroup": vars.bgName,
+	"environment": vars.envName,
+	"status": if (payload.message != null) payload.message else
+				payload.status default "" ++ " - " ++ payload.application.status default "" ++ " - " ++ payload.application.desiredState default "",
+	"runtimeVersion": payload.target.deploymentSettings.runtimeVersion default "Unknown",
+	"instanceCount": payload.target.replicas default "Unknown",
+	"cpu": (((payload.target.deploymentSettings.resources.cpu.reserved default payload.target.deploymentSettings.cpuReserved default "0" replace "m" with "") as Number)/1000 as String) ++ " vCores",
+	"memory": payload.target.deploymentSettings.resources.memory.reserved default payload.target.deploymentSettings.memoryReserved default "0" replace "Mi" with " MB"
+}	
+]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+						</parallel-foreach>
+					</when>
+					<otherwise>
+						<ee:transform doc:name="No App Info" doc:id="f770337c-56c5-45f6-a774-7b642d34876d">
+							<ee:message>
+								<ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+[]]]></ee:set-payload>
+							</ee:message>
+						</ee:transform>
+					</otherwise>
+				</choice>
+			</parallel-foreach>
+		</parallel-foreach>
+		<ee:transform doc:name="Extract Info from Composite Structure" doc:id="806e16bd-cff4-4b5c-a6cf-a340150401af" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+{
+	"applications": flatten(flatten(payload map (
+						$.payload map (
+							$.payload map (
+								$.payload
+								)
+							)
+						)))
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</sub-flow>
+	
+	<flow name="get-RTF-applications-flow" doc:id="c44cea62-a598-49af-b8f2-7eab88fb6fdf" >
+		<logger level="INFO" doc:name="Logger" doc:id="71af607a-59bd-4f16-86b6-4ae07c797dff" message="Get RTF Applications - Entry"/>
+		<flow-ref doc:name="Get Info (Common)" doc:id="11f5962a-34a1-4ee8-bd61-2eb9b7df0a8f" name="get-info-common-sub-flow"/>
+		<flow-ref doc:name="Get RTF Applications" doc:id="6a75d9e8-7e30-406a-b340-c121df165743" name="get-and-patch-RTF-applications-common-sub-flow" />
+		<flow-ref doc:name="Common Completion" doc:id="26074afd-3e16-4fca-b92e-13e62fc81f99" name="common-completion-sub-flow" />
+		<logger level="INFO" doc:name="Logger" doc:id="bec292f2-6bfb-4944-8839-decbf0debc71" message="Get RTF Applications - Complete"/>
+		<error-handler ref="common-anypoint-platform-management-error-handler" />        
+	</flow>
+
+	<flow name="patch-RTF-applications-flow" doc:id="552b991f-49f1-4ee6-b729-388a839fbfd4" >
+		<logger level="INFO" doc:name="Logger" doc:id="38bbecae-371b-4cfa-98dd-1c66888f5652" message="Patch RTF Applications - Entry"/>
+		<set-variable value="#[payload]" doc:name="Set Input Payload" doc:id="4ec663f4-245c-4f49-ad05-f2026483e06c" variableName="inputPayload"/>
+		<flow-ref doc:name="Get Info (Common)" doc:id="e695d846-09b9-4a11-b139-ba1ee597efc1" name="get-info-common-sub-flow"/>
+		<flow-ref doc:name="Patch RTF Applications" doc:id="dbe3446e-eb23-4362-8231-4b5af447810b" name="get-and-patch-RTF-applications-common-sub-flow" />
+		<flow-ref doc:name="Common Completion" doc:id="00223d1f-7a2b-407b-b9ab-9bca4b2e30e7" name="common-completion-sub-flow" />
+		<logger level="INFO" doc:name="Logger" doc:id="c8751c20-3891-429d-9f08-169d66ce3131" message="Patch RTF Applications - Complete"/>
+		<error-handler ref="common-anypoint-platform-management-error-handler" />        
+	</flow>
+	
+	<sub-flow name="post-assets-migrate-runtimemanager-rtf-sub-flow" doc:id="ba6c6f72-90c4-4ed7-b8a5-8bbb50f64bd9" >
+		<logger level="INFO" doc:name="Logger" doc:id="1b750434-f092-427f-abd5-944b5f96c700" message='#[output application/java&#10;---&#10;"Runtime Manager - RTF Asset Migration  for " ++ payload.environmentSpecificAssets.runtimeManager.rtfAssetName]'/>
+		<set-variable value="#[payload.environmentSpecificAssets.runtimeManager.rtfAssetName]" doc:name="Set Source Runtime Manager RTF Asset Name" doc:id="2df3cc26-82ff-4cf0-a04f-cd8b6f5a621d" variableName="rtmRTFSourceAssetName" />
+		<set-variable value="#[output application/java&#10;---&#10;payload.environmentSpecificAssets.runtimeManager.rtfAssetName ++&#10;if ((payload.environmentSpecificAssets.runtimeManager.deleteAsset &#10;	default false) == false) '${anypoint.platform.runtimemanager.application.suffix}'&#10;else  &quot;&quot;]" doc:name="Set Target Runtime Manager RTF Asset Name" doc:id="000a116e-ff5e-43de-bb94-8364ba97bc86" variableName="rtmRTFTargetAssetName" />
+		<set-variable value="#[payload.environmentSpecificAssets.runtimeManager.properties]" doc:name="Set Runtime Manager Property Values" doc:id="3b26ac27-8016-41c1-9b01-2ba643317129" variableName="rtmRTFProperties" />
+		<flow-ref doc:name="Post Assets Migrate - Runtime Manager RTF (Common)" doc:id="1d723969-f16e-4387-99a7-7a1817a7f529" name="common-post-assets-migrate-runtimemanager-rtf-sub-flow" />
+		<logger level="INFO" doc:name="Logger" doc:id="81b6afcb-af18-4212-bc34-1e3769a6db73" message="Runtime Manager - RTF Asset Migration - Complete "/>		
+	</sub-flow>
+
+
+	
+	<sub-flow name="post-assets-migrate-rollback-or-commit-runtimemanager-rtf-sub-flow" doc:id="d8d73369-7f85-4a34-ad69-275e0e510dbd" >
+		<logger level="INFO" doc:name="Logger" doc:id="5d4617b5-9637-4832-88c4-99f2a9af7622" message='#[output application/java&#10;---&#10;"Runtime Manager - RTF Asset Migration " ++ vars.confirmationType ++ " for " ++ payload.environmentSpecificAssets.runtimeManager.rtfAssetName]'/>
+		<set-variable value="#[output application/json&#10;---&#10;payload.environmentSpecificAssets.runtimeManager.rtfAssetName ++ '${anypoint.platform.runtimemanager.application.suffix}']" doc:name="Set Source Runtime Manager RTF Asset Name" doc:id="4f243210-068c-4cb0-ab32-d7ba228b435a" variableName="rtmRTFSourceAssetName" />
+		<set-variable value="#[payload.environmentSpecificAssets.runtimeManager.rtfAssetName]" doc:name="Set Target Runtime Manager RTF Asset Name" doc:id="4f6c52bc-4087-47d5-a56a-e60f906c7b02" variableName="rtmRTFTargetAssetName" />
+		<set-variable value="#[payload.environmentSpecificAssets.runtimeManager.properties]" doc:name="Set Runtime Manager Property Values" doc:id="b5003673-e039-4a63-a721-b98715ee5e40" variableName="rtmRTFProperties" />
+		<scatter-gather doc:name="Scatter-Gather" doc:id="1177e183-1fad-4f3d-8438-5a6066b49c8d">
+					<route>
+						<http:request method="GET" doc:name="Get Source Runtime Manager Deployments" doc:id="85aac465-b41e-4e0f-a543-f8d0cf541590" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.applications.rtf}">
+			<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+			<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.fromBGId,
+	"environmentId": vars.fromEnvId
+}]]]></http:uri-params>
+		</http:request>
+				<set-variable value="#[((payload.items default []) filter $.name == vars.rtmRTFTargetAssetName)[0]]" doc:name="Set Runtime Manager Old Asset Deployment" doc:id="d184e24b-77d8-466d-a740-de762a0bd0e3" variableName="rtmRTFOldAssetDeployment" />
+					</route>
+			<route >
+				<http:request method="GET" doc:name="Get Target Runtime Manager Deployments" doc:id="fc660ee5-df6b-4b90-9011-86c29a3ea024" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.applications.rtf}">
+					<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+					<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.toBGId,
+	"environmentId": vars.toEnvId
+}]]]></http:uri-params>
+				</http:request>
+				<set-variable value="#[((payload.items default []) filter $.name == vars.rtmRTFSourceAssetName)[0]]" doc:name="Set Runtime Manager New Asset Deployment" doc:id="b37ffb67-5e46-4c3a-a13f-4bcfdbcda0c2" variableName="rtmRTFNewAssetDeployment" />
+			</route>
+				</scatter-gather>
+		<choice doc:name="Choice" doc:id="4d753740-27c4-437b-a59e-e7e2cd28b491" >
+			<when expression='#[vars.rtmRTFOldAssetDeployment.id != null and vars.rtmRTFOldAssetDeployment.application.status == "NOT_RUNNING"]'>
+				<choice doc:name="Choice" doc:id="83815b92-0e46-4fac-831c-b4a0a249c191" >
+					<when expression='#[vars.rtmRTFNewAssetDeployment.id != null and vars.rtmRTFNewAssetDeployment.application.status == "RUNNING"]'>
+						<choice doc:name="Choice" doc:id="f5b43293-c530-4553-a014-2aabfed9f3be">
+			<when expression='#[vars.confirmationType == "commit"]'>
+				<http:request method="DELETE" doc:name="DELETE Source Runtime Manager App" doc:id="f39226bc-0dea-4545-9bf1-21ed5eca2cc8" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.applications.rtf}/{deploymentId}" target="appDeleteResponse">
+									<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+									<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.fromBGId,
+	"environmentId": vars.fromEnvId,
+	"deploymentId": vars.rtmRTFOldAssetDeployment.id
+}]]]></http:uri-params>
+								</http:request>
+								<set-variable value="#[vars.fromBGId]" doc:name="Set Backup From BG Id" doc:id="ea4849e1-3c06-43a7-8340-e030f27657fe" variableName="fromBGIdBackup" />
+				<set-variable value="#[vars.fromEnvId]" doc:name="Set Backup From Env Id" doc:id="0323d644-0dea-421c-b73a-e9321b67a722" variableName="fromEnvIdBackup" />
+				<set-variable value="#[vars.toBGId]" doc:name="Set Commit From BG Id" doc:id="2cd5fcdc-5725-49a8-95dc-840a2889c05b" variableName="fromBGId" />
+				<set-variable value="#[vars.toEnvId]" doc:name="Set Commit From Env Id" doc:id="a08ef7f6-2341-4668-b242-8506158d0ea5" variableName="fromEnvId" />
+								<flow-ref doc:name="Post Assets Migrate Commit - Runtime Manager RTF (Common)" doc:id="08445c42-d1a6-400d-86ec-54bed035b5c8" name="common-post-assets-migrate-runtimemanager-rtf-sub-flow" />
+				<set-variable value="#[vars.fromBGIdBackup]" doc:name="Set Original BG Id" doc:id="43bcdf2e-44cf-4d44-9350-50946e10d45e" variableName="fromBGId" />
+				<set-variable value="#[vars.fromEnvIdBackup]" doc:name="Set Original Env Id" doc:id="e16989c2-e3ab-4c5d-aa60-adfcacbc00ec" variableName="fromEnvId" />
+			</when>
+			<otherwise>
+								<http:request method="DELETE" doc:name="DELETE Target Runtime Manager App" doc:id="bdd39346-15ca-4bc9-92d7-54318cafb542" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.applications.rtf}/{deploymentId}" target="appDeleteResponse">
+					<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+					<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.toBGId,
+	"environmentId": vars.toEnvId,
+	"deploymentId": vars.rtmRTFNewAssetDeployment.id
+}]]]></http:uri-params>
+				</http:request>
+								<set-variable value="STARTED" doc:name="Set App Status Change (Source)" doc:id="285780c2-486c-424c-9719-ffc7c3d6f08b" variableName="statusChange" />
+								<set-variable value="#[vars.rtmRTFOldAssetDeployment.id]" doc:name="Set App Status Change Deployment Id (Source)" doc:id="34d9739f-0dfe-4ac3-921f-ac8043377b7a" variableName="statusChangeDeploymentId" />
+								<set-variable value="#[vars.fromEnvId]" doc:name="Set App Status Change Environment (Source)" doc:id="31fd4859-4151-41d1-8ca4-75e0efb1bbf8" variableName="statusChangeEnvId" />
+								<set-variable value="#[vars.fromBGId]" doc:name="Set App Status Change Business Group (Target)" doc:id="ff4850de-c1c5-4782-96a1-b40a3e59d63f" variableName="statusChangeBGId" />
+								<flow-ref doc:name="START Source Runtime Manager App" doc:id="3e4ced09-e3ca-4a6d-9604-a61cf2ee7069" name="common-status-change-runtimemanager-rtf-sub-flow" target="startSourceResponse" />
+								<logger level="INFO" doc:name="Logger" doc:id="50f71ebf-21f5-4cee-bd5b-248332f6296b" message='#[output application/java&#10;---&#10;"App Name - " ++ vars.rtmRTFTargetAssetName ++ &#10;", App Status - " ++ vars.startSourceResponse.application.status]'/>
+			</otherwise>
+		</choice>
+					</when>
+					<otherwise >
+						<logger level="INFO" doc:name="Logger" doc:id="c787bba0-5e72-49a6-9a2c-98e75c5b9b78" message='#["No Target Runtime Manager - RTF Asset found to " ++ vars.confirmationType]'/>
+					</otherwise>
+				</choice>
+			</when>
+			<otherwise >
+				<logger level="INFO" doc:name="Logger" doc:id="1ce600e0-52a7-44fe-b315-5107a3063f05" message='#["No Source Runtime Manager - RTF Asset found to " ++ vars.confirmationType]'/>
+			</otherwise>
+		</choice>		
+	</sub-flow>
+
+	<sub-flow name="common-post-assets-migrate-runtimemanager-rtf-sub-flow" doc:id="bfc430f1-9ac8-4082-9129-ebb5b5c3384b" >
+		<http:request method="GET" doc:name="Get Source Runtime Manager Deployments" doc:id="b283ae60-5106-48e8-990d-459304574336" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.applications.rtf}">
+			<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]>		</http:headers>
+			<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.fromBGId,
+	"environmentId": vars.fromEnvId
+}]]]>		</http:uri-params>
+		</http:request>
+		<set-variable value="#[((payload.items default []) filter $.name == vars.rtmRTFSourceAssetName)[0].id]" doc:name="Set Runtime Manager Source RTF Deployment ID" doc:id="7dd8f164-d915-4c10-8a8d-ba67c6a9a38d" variableName="rtmRTFSourceDeploymentId" />
+		<choice doc:name="Choice" doc:id="ba540550-109d-4500-b6e6-5643a06dc9a9">
+			<when expression="#[vars.rtmRTFSourceDeploymentId != null]">
+				<http:request method="GET" doc:name="Get Source Runtime Manager App Deployment Details" doc:id="b1bc467d-455e-4d87-9c3f-810ad76d9cb3" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.applications.rtf}/{deploymentId}">
+			<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]>		</http:headers>
+			<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.fromBGId,
+	"environmentId": vars.fromEnvId,
+	"deploymentId": vars.rtmRTFSourceDeploymentId
+}]]]>		</http:uri-params>
+		</http:request>
+				<choice doc:name="Choice" doc:id="7f50613f-b699-4f38-b4be-718d4ef97a6f">
+					<when expression='#[payload.application.status == "RUNNING"]'>
+						<choice doc:name="Choice" doc:id="aa7b0722-3ec8-4758-a888-5ad16376a175">
+							<when expression="#[vars.rtmRTFTargetAssetName == vars.rtmRTFSourceAssetName]">
+								<http:request method="DELETE" doc:name="DELETE Source Runtime Manager App" doc:id="29a8620e-a105-488c-a145-1285528ad71a" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.applications.rtf}/{deploymentId}" target="appDeleteResponse">
+									<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]>		</http:headers>
+			<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.fromBGId,
+	"environmentId": vars.fromEnvId,
+	"deploymentId": vars.rtmRTFSourceDeploymentId
+}]]]>		</http:uri-params>
+								</http:request>
+							</when>
+							<otherwise>
+								<set-variable value="#[vars.fromBGId]" doc:name="Set App Status Change Business Group (Source)" doc:id="92ec91aa-0f2c-4ba2-8c68-cc3ec91679f5" variableName="statusChangeBGId" />
+								<set-variable value="#[vars.fromEnvId]" doc:name="Set App Status Change Environment (Source)" doc:id="ed1d6e49-4475-445a-92cc-d9c793cdd6fc" variableName="statusChangeEnvId" />
+								<set-variable value="#[vars.rtmRTFSourceDeploymentId]" doc:name="Set App Status Change Deployment Id (Source)" doc:id="f8a0bfa1-0632-441e-8590-5916e243ccea" variableName="statusChangeDeploymentId" />
+								<set-variable value="STOPPED" doc:name="Set App Status Change (Source)" doc:id="f749052e-f5d4-4530-9857-80695af73f18" variableName="statusChange" />
+								<flow-ref doc:name="STOP Source Runtime Manager App" doc:id="0256307e-92a6-45aa-ba26-8daf000be114" name="common-status-change-runtimemanager-rtf-sub-flow" target="stopSourceResponse" />
+							</otherwise>
+						</choice>
+						<http:request method="POST" doc:name="Deploy Target Runtime Manager App" doc:id="de9e0704-3317-452e-a811-a02bb498b655" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.applications.rtf}">
+							<http:body><![CDATA[#[output application/json
+---
+payload update {
+	case .name! -> vars.rtmRTFTargetAssetName
+	case .application.desiredState! -> "STOPPED"
+    case .application.configuration."mule.agent.application.properties.service".properties -> (vars.rtmRTFProperties default {} ++ payload.application.configuration."mule.agent.application.properties.service".properties) distinctBy $$			
+}]]]></http:body>
+							<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]>						</http:headers>
+							<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.toBGId,
+	"environmentId": vars.toEnvId
+}]]]>						</http:uri-params>
+						</http:request>
+						<set-variable value="STARTED" doc:name="Set App Status Change (Target)" doc:id="5d723c0f-2390-4637-a31c-773ee3f25feb" variableName="statusChange" />
+						<set-variable value="#[payload.id]" doc:name="Set App Status Change Deployment Id (Target)" doc:id="df3c2726-27c6-4b8c-8011-9ba8dbdcaf9e" variableName="statusChangeDeploymentId" />
+						<set-variable value="#[vars.toEnvId]" doc:name="Set App Status Change Environment (Target)" doc:id="2f47b384-8e25-4b7b-97b7-c90abac95ad0" variableName="statusChangeEnvId" />
+						<set-variable value="#[vars.toBGId]" doc:name="Set App Status Change Business Group (Target)" doc:id="5b2f9a8c-6e3c-480a-a7c4-8ef4c9c3341e" variableName="statusChangeBGId" />
+						<flow-ref doc:name="START Target Runtime Manager App" doc:id="21815e44-2aff-4a6f-8e2c-f8b4fc3b0d27" name="common-status-change-runtimemanager-rtf-sub-flow" target="startTargetResponse" />
+						<logger level="INFO" doc:name="Logger" doc:id="bf381b24-81d9-4385-b187-bc2d4d15b49c" message='#[output application/java&#10;---&#10;"Source App Name - " ++ vars.rtmRTFSourceAssetName ++ &#10;" migrated to Target App Name - " ++ vars.rtmRTFTargetAssetName ++ &#10;", Target App Status - " ++ vars.startTargetResponse.application.status]'/>
+					</when>
+					<otherwise>
+						<logger level="INFO" doc:name="Logger" doc:id="1c8b42ae-262f-43dd-aea9-0b475e2d1fd7" message='#["Runtime Manager - RTF Asset in " ++ payload.application.status ++ " status cannot be migrated"]'/>
+					</otherwise>
+				</choice>
+			</when>
+			<otherwise>
+				<logger level="INFO" doc:name="Logger" doc:id="9efb1327-387b-4127-825b-62e758c7b826" message="No Runtime Manager - RTF Asset found to migrate"/>
+			</otherwise>
+		</choice>
+	</sub-flow>
+
+
+
+	<sub-flow name="common-status-change-runtimemanager-rtf-sub-flow" doc:id="4d76bb5a-09c3-499f-8316-b368a1f50cbf">
+		<http:request method="PATCH" doc:name="Change Status Runtime Manager App" doc:id="c4a028c2-7004-48ef-aa94-c5b96987f0ea" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.applications.rtf}/{deploymentId}" responseTimeout="${anypoint.platform.api.timeout}">
+					<http:body><![CDATA[#[%dw 2.0
+output application/json
+---
+{
+  "application": {
+    "desiredState": vars.statusChange
+  }
+}]]]></http:body>
+					<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader,
+	"Content-Type": "application/json"
+}]]]></http:headers>
+			<http:uri-params ><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.statusChangeBGId,
+	"environmentId": vars.statusChangeEnvId,
+	"deploymentId": vars.statusChangeDeploymentId
+}]]]></http:uri-params>
+			<http:response-validator >
+				<http:success-status-code-validator values="200..499" />
+			</http:response-validator>
+				
+</http:request>
+		<until-successful maxRetries="${anypoint.platform.api.retry.count}" doc:name="Retry Runtime Manager RTF Status Change Check" doc:id="9c1466b6-74ac-42c1-be79-4e248837da47" millisBetweenRetries="${anypoint.platform.api.retry.interval}">
+			<http:request method="GET" doc:name="Get Runtime Manager App Status" doc:id="784214c0-f5b2-4dde-98db-c46cb56f4971" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.applications.rtf}/{deploymentId}">
+			<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]>		</http:headers>
+			<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.statusChangeBGId,
+	"environmentId": vars.statusChangeEnvId,
+	"deploymentId": vars.statusChangeDeploymentId
+}]]]>		</http:uri-params>
+				<http:response-validator >
+					<http:success-status-code-validator values="200..599" />
+				</http:response-validator>
+		
+</http:request>
+			<choice doc:name="Choice" doc:id="9b013d82-1d91-4fa4-a958-da0d2c4e6a46" >
+				<when expression='#[payload.status == "APPLYING"]'>
+					<raise-error doc:name="Raise Error - App Status Change in Progress" doc:id="fc7f2946-eb4b-4179-8a96-9a5fdcd197bd" type="AP_MGMT:RTF_APP_STATUS_CHANGE_INPROGRESS" description="App Status - APPLYING"/>
+				</when>
+			</choice>
+		</until-successful>	
+	</sub-flow>
+
+</mule>

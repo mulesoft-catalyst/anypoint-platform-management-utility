@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:apikit="http://www.mulesoft.org/schema/mule/mule-apikit" xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd  http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd http://www.mulesoft.org/schema/mule/scripting http://www.mulesoft.org/schema/mule/scripting/current/mule-scripting.xsd">
+    <flow name="api-main">
+        <http:listener config-ref="api-httpListenerConfig" path="/api/*">
+            <http:response statusCode="#[vars.httpStatus default 200]">
+                <http:headers><![CDATA[#[vars.outboundHeaders default {}]]]></http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body><![CDATA[#[payload]]]></http:body>
+                <http:headers><![CDATA[#[vars.outboundHeaders default {}]]]></http:headers>
+            </http:error-response>
+        </http:listener>
+        <logger level="INFO" doc:name="Logger" doc:id="e221b68e-3bbb-4937-8914-a8f42b26fc16" message="Anypoint Platform Management Request Received" />
+        <apikit:router config-ref="api-config" />
+        <logger level="INFO" doc:name="Logger" doc:id="6d447529-604e-42f2-9f8b-85602a9c74fe" message="Anypoint Platform Management Response Returned" />
+        <error-handler ref="common-anypoint-platform-management-error-handler" />
+    </flow>
+    <flow name="get:\management-plane\info:api-config">
+        <flow-ref doc:name="Common Invocation" doc:id="663e3a55-66c3-4c1a-bab5-c1297c9bdac7" name="common-invocation-sub-flow" />
+        <flow-ref doc:name="Get Info" doc:id="b329d753-1c61-4d60-bf53-c8333c8a2b7c" name="get-info-flow" />
+    </flow>
+    <flow name="get:\runtime-plane\(deployment-type)\applications:api-config">
+        <flow-ref doc:name="Common Invocation" doc:id="2efdfd40-6a9c-4b89-a1dd-ed8825d8047c" name="common-invocation-sub-flow" />
+        <flow-ref doc:name="Get &lt;deployment-type&gt; Applications" doc:id="fa9a4915-4e1d-4c0a-afd5-6011674a8477" name="#[&quot;get-&quot; ++ attributes.uriParams.'deployment-type' ++ &quot;-applications-flow&quot;]" />
+    </flow>
+    <flow name="patch:\runtime-plane\(deployment-type)\applications:application\json:api-config">
+        <flow-ref doc:name="Common Invocation" doc:id="e0099481-cb4b-4d18-aa93-9cf4aabf6ef8" name="common-invocation-sub-flow" />
+        <flow-ref doc:name="Patch &lt;deployment-type&gt; Applications" doc:id="cc655e37-52bc-4655-b349-7aecc55e6dc1" name="#[&quot;patch-&quot; ++ attributes.uriParams.'deployment-type' ++ &quot;-applications-flow&quot;]" />
+    </flow>
+    <flow name="post:\management-plane\assets\migrate:application\json:api-config">
+        <flow-ref doc:name="Common Invocation" doc:id="2b9a4e14-d485-4642-a6dd-476fca888c63" name="common-invocation-sub-flow" />
+        <async doc:name="Async" doc:id="769b07fe-f4ab-4265-92cf-22a2e41c35bf">
+            <flow-ref doc:name="Post Assets Migrate" doc:id="452f66a5-5463-4eaf-a905-01e63c065933" name="post-assets-migrate-flow" />
+        </async>
+        <ee:transform doc:name="Transform Message" doc:id="9675c444-c009-45a7-9177-f6e5a0d8280c">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"status": "Asset Migration in progress. Use " ++ correlationId ++ " to search the logs"
+}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+    </flow>
+    <flow name="post:\management-plane\assets\migrate\commit:application\json:api-config">
+        <flow-ref doc:name="Common Invocation" doc:id="8e72e89b-90ed-4082-9167-cd3221990cce" name="common-invocation-sub-flow" />
+        <set-variable value="commit" doc:name="Set Confirmation Type" doc:id="3e0bb3be-dbcd-4031-ac37-2e5de7322f3b" variableName="confirmationType" />
+        <async doc:name="Async" doc:id="3103e8a6-96c6-4b53-b3d0-47e8bc71db2e">
+            <flow-ref doc:name="Post Assets Migrate - Commit" doc:id="8291913b-7a12-4e20-8b0f-6bb6e953f91d" name="post-assets-migrate-rollback-or-commit-flow" />
+        </async>
+        <ee:transform doc:name="Transform Message" doc:id="0ebbfec2-f6d6-4273-8db7-e8eb13ae017b">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"status": "Asset Migration - Commit in progress. Use " ++ correlationId ++ " to search the logs"
+}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+    </flow>
+    <flow name="post:\management-plane\assets\migrate\rollback:application\json:api-config">
+        <flow-ref doc:name="Common Invocation" doc:id="bc06d83d-9635-425e-928d-bdee0123b996" name="common-invocation-sub-flow" />
+        <set-variable value="rollback" doc:name="Set Confirmation Type" doc:id="f5c53790-d01f-4f6a-879c-473d11362be3" variableName="confirmationType" />
+        <async doc:name="Async" doc:id="a88b9964-9227-472e-a99b-3aa5bb283cfd">
+            <flow-ref doc:name="Post Assets Migrate - Rollback" doc:id="25d515f5-85a0-4d16-b7f5-8f9701058091" name="post-assets-migrate-rollback-or-commit-flow" />
+        </async>
+        <ee:transform doc:name="Transform Message" doc:id="cc995715-0ba3-404c-ad37-062d9bdb7dbe">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"status": "Asset Migration - Rollback in progress. Use " ++ correlationId ++ " to search the logs"
+}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+    </flow>
+    <flow name="post:\management-plane\assets\copy:application\json:api-config">
+        <flow-ref doc:name="Common Invocation" doc:id="5dda5c52-0a43-4cef-b6e4-0b62780c61bf" name="common-invocation-sub-flow" />
+        <async doc:name="Async" doc:id="9e0f4191-a0bd-4013-b4fe-5fd7832f29ea">
+            <flow-ref doc:name="Post Assets Copy" doc:id="b25715b6-23c9-408c-81f0-44b5de12a116" name="post-assets-copy-flow" />
+        </async>
+        <ee:transform doc:name="Transform Message" doc:id="1232005d-af8e-4362-bbc8-1cfeb505ffb0">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"status": "Asset Copy in progress. Use " ++ correlationId ++ " to search the logs"
+}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+    </flow>
+    <flow name="post:\management-plane\assets\purge:application\json:api-config">
+        <flow-ref doc:name="Common Invocation" doc:id="0ab3bf08-ab69-4c9b-b4dd-131b7ebc577f" name="common-invocation-sub-flow" />
+        <async doc:name="Async" doc:id="69098729-7d32-413d-af26-af0da5e513d7">
+            <flow-ref doc:name="Post Assets Purge" doc:id="29d25e32-030b-4b90-a964-051850f3e69f" name="post-assets-purge-flow" />
+        </async>
+        <ee:transform doc:name="Transform Message" doc:id="6cc24560-1618-4fe3-ba6a-fd60bbd77dc5">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"status": "Asset Purge in progress. Use " ++ correlationId ++ " to search the logs"
+}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+    </flow>
+</mule>

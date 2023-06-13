@@ -1,0 +1,53 @@
+#%RAML 1.0 DataType
+description: The copy/ purge assets request copies or purges various artifacts for a Mule application from one business group to another
+type: object
+properties:
+  fromBusinessGroup:
+    type: string
+    description: The source business group from which the asset needs to be migrated
+    example: MuleSoft
+  toBusinessGroup:
+    type: string
+    description: The target business group to which the asset needs to be migrated
+    example: C4E
+  environmentSpecificAssets:
+    type: object
+    description: The list of environment specific related artifacts which needs to be migrated between environments
+    properties:
+      fromEnvironment:
+        type: string
+        description: The source environment from which the asset needs to be migrated
+        example: Development
+      toEnvironment:
+        type: string
+        description: The target environment to which the asset needs to be migrated
+        example: Development
+      anypointMQ:
+        type: object
+        required: false
+        description: The details of the assets in the Anypoint MQ which needs to be migrated
+        properties:
+          region:
+            type: string
+            enum: ["us-east-1", "us-west-2", "ca-central-1", "eu-west-1", "eu-west-2", "ap-southeast-1", "ap-southeast-2", "ap-northeast-1"]
+            description: The Anypoint MQ region where the asset copy/ purge will be processed. Note - The asset copy/ purge between different regions is not supported
+            example: "eu-west-2"
+          destinations:
+            type: array
+            description: The list of Anypoint MQ destination assets that needs to copied/ purged 
+            required: false
+            items:
+              type: string
+            example:
+              - "asset-migration-test-q1"
+              - "asset-migration-test-fq1"
+              - "asset-migration-test-ex1"
+          clients:
+            type: array
+            description: The list of Anypoint MQ client assets that needs to copied/ purged 
+            required: false
+            items:
+              type: string
+            example:
+              - "asset-migration-test-client1"
+              - "asset-migration-test-client2"

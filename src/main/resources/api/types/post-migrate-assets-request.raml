@@ -1,0 +1,79 @@
+#%RAML 1.0 DataType
+description: The migrate assets request performs activities related to migrating various artifacts for a Mule application from one business group to another
+type: object
+properties:
+  fromBusinessGroup:
+    type: string
+    description: The source business group from which the asset needs to be migrated
+    example: MuleSoft
+  toBusinessGroup:
+    type: string
+    description: The target business group to which the asset needs to be migrated
+    example: C4E
+  assetMinorVersionOverride:
+    type: string
+    description: The minor version override applied on the source version to derive the target version. 
+    example: "1.1"
+    pattern: "[0-9]*.[0-9]*"
+    required: false
+  designCenterAssetName:
+    type: string
+    description: The name of the API Specification Project in Design Center
+    example: asset-migration-test-api
+    required: false
+  exchangeAssetName:
+    type: string
+    description: The name of the Published Asset in Exchange
+    example: asset-migration-test-api
+    required: false
+  environmentSpecificAssets:
+    type: object
+    description: The list of environment specific related artifacts which needs to be migrated between environments
+    required: false
+    properties:
+      fromEnvironment:
+        type: string
+        description: The source environment from which the asset needs to be migrated
+        example: Development
+      toEnvironment:
+        type: string
+        description: The target environment to which the asset needs to be migrated
+        example: Development
+      apiManagerAssetName:
+        type: string
+        description: The name of the API Managed instance in the API Manager
+        required: false
+        example: asset-migration-test-api
+      runtimeManager:
+        type: object
+        description: The details of the application in the Runtime Manager which needs to be migrated
+        required: false      
+        properties:
+          deleteAsset:
+            type: boolean
+            required: false
+            default: false
+            description: A boolean flag to indicate whether the  asset on the source business group can be deleted which will allow the target asset to deployed under the same name without requiring a cleanup in future
+            example: false
+          cloudHubAssetName:
+            type: string
+            description: The name of the CloudHub application in the Runtime Manager
+            required: false
+            example: exp-asset-migration-test-api-dev
+          rtfAssetName:
+            type: string
+            description: The name of the RTF application in the Runtime Manager
+            required: false
+            example: sys-asset-migration-test-api-rtf-dev
+          properties:
+            type: object
+            required: false
+            description: A list of the property names and their updated values which needs to be replaced in the migrated application. This will be required to replace anypoint platform client_id/ secret, auto discovery id etc in the new migrated environment
+            properties:
+              //: any
+            example:
+              Key1: "New Value1"
+              Key2: "New Value2"
+
+      
+      

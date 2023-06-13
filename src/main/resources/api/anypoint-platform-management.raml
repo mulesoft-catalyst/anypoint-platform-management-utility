@@ -1,0 +1,192 @@
+#%RAML 1.0
+title: Anypoint Platform Management
+description: The Platform Management Mule Application allows to perform various management activities on the Anypoint platform
+version: v1.0
+mediaType: [application/json, application/csv]
+protocols: HTTPS
+baseUri: https://api.mulesoft-catalyst.com/anypoint-platform-management/api
+
+traits:
+  businessGroupFilter:
+    queryParameters:
+      businessGroups:
+        type: array
+        required: false
+        description: The list of business groups to filter the operation
+        items:
+            type: string
+            example: "MuleSoft"
+  environmentFilter:
+    queryParameters:
+      environments:
+        type: array
+        required: false
+        description: The list of environments to filter the operation
+        items:
+            type: string
+            example: "Development"
+  applicationFilter:
+    queryParameters:
+      applications:
+        type: array
+        required: false
+        description: The list of applications to filter the operation
+        items:
+            type: string
+            example: "api-01"          
+securitySchemes:
+  oauth2:
+    description: The API accepts an access_token returned by the Anypoint Platform Access Management API for both Users and Connection Apps. Using the token it authorizes the users/ connected apps to perform the same functions as the user/ connected apps authorization allows
+    type: OAuth 2.0
+    describedBy:
+      headers:
+        Authorization:
+          description: The bearer token returned from the Anypoint Platform Access Management API
+          type: string
+          example: "Bearer xxxxxxxxxxx"
+            
+/management-plane:
+  /info:
+    get:
+      is:
+        - businessGroupFilter
+        - environmentFilter
+      securedBy:
+        - oauth2
+      responses:
+        200:
+          body:
+            application/json:
+              type: !include types/get-info-response.raml
+            application/csv:
+              type: any 
+  /assets:
+    /migrate:
+      description: The endpoint allows migrating the assets from a source business group to the target business group
+      post:
+        securedBy:
+          - oauth2
+        body:
+          application/json:
+            type: !include types/post-migrate-assets-request.raml
+        responses:
+          202:
+            body:
+              application/json:
+                type: 
+                  properties:
+                    status: 
+                      type: string
+      /rollback:
+        description: The endpoint allows roll back of the asset migration to reinstate all assets in the source business group to its previous state and deletes all newly created assets in the target business group
+        post:
+          securedBy:
+            - oauth2
+          body:
+            application/json:
+              type: !include types/post-migrate-assets-request.raml
+          responses:
+            202:
+              body:
+                application/json:
+                  type: 
+                    properties:
+                      status: 
+                        type: string                      
+      /commit:
+        description: The endpoint allows commiting of the asset migration by deleting the old asset entries in the source business group and rename any applicable assets in the target business group as the final version
+        post:
+          securedBy:
+            - oauth2
+          body:
+            application/json:
+              type: !include types/post-migrate-assets-request.raml
+          responses:
+            202:
+              body:
+                application/json:
+                  type: 
+                    properties:
+                      status: 
+                        type: string                      
+    /copy:
+      description: The endpoint allows copying the assets from a source business group to the target business group
+      post:
+        securedBy:
+          - oauth2
+        body:
+          application/json:
+            type: !include types/post-copy-purge-assets-request.raml
+        responses:
+          202:
+            body:
+              application/json:
+                type: 
+                  properties:
+                    status: 
+                      type: string
+    /purge:
+      description: The endpoint allows purging the assets from the source business group after verifying they exist on the target business group
+      post:
+        securedBy:
+          - oauth2
+        body:
+          application/json:
+            type: !include types/post-copy-purge-assets-request.raml
+        responses:
+          202:
+            body:
+              application/json:
+                type: 
+                  properties:
+                    status: 
+                      type: string
+  /users:
+    get:
+      securedBy:
+        - oauth2
+      responses:
+        200:
+          body:
+            application/json:
+              type: any
+            application/csv:
+              type: any
+/runtime-plane:
+  /{deployment-type}:
+    uriParameters:
+      deployment-type:
+        enum: ["CloudHub", "RTF"]
+        description: The type of deployment on which management actions are performed
+    /applications:
+      get:
+        is:
+          - businessGroupFilter
+          - environmentFilter
+          - applicationFilter
+        securedBy:
+          - oauth2
+        responses:
+          200:
+            body:
+              application/json:
+                type: !include types/get-applications-response.raml
+              application/csv:
+                type: any
+      patch:
+        is:
+          - businessGroupFilter
+          - environmentFilter
+          - applicationFilter
+        securedBy:
+          - oauth2
+        body:
+          application/json:
+            type: !include types/patch-applications-request.raml  
+        responses:
+          200:
+            body:
+              application/json:
+                type: !include types/get-applications-response.raml
+              application/csv:
+                type: any 

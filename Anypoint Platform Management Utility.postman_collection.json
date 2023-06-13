@@ -1,0 +1,469 @@
+{
+	"info": {
+		"_postman_id": "2b0b7422-dc88-4ef8-abf5-2d1366b276a6",
+		"name": "Anypoint Platform Management Utility",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Management Plane",
+			"item": [
+				{
+					"name": "Get Info",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://anypoint-platform-management-utility.uk-e1.cloudhub.io/api/management-plane/info",
+							"protocol": "http",
+							"host": [
+								"anypoint-platform-management-utility",
+								"uk-e1",
+								"cloudhub",
+								"io"
+							],
+							"path": [
+								"api",
+								"management-plane",
+								"info"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Phase 1 - Migrate Assets (DC, EXC, APIM)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"fromBusinessGroup\": \"Shell\",\n    \"toBusinessGroup\": \"Customers\",\n    \"designCenterAssetName\": \"Account and Transaction Sandbox\",\n    \"exchangeAssetName\": \"account-and-transaction-sandbox\",\n    \"environmentSpecificAssets\": {\n        \"fromEnvironment\": \"Sandbox\",\n        \"toEnvironment\": \"Sandbox\",\n        \"apiManagerAssetName\": \"account-and-transaction-sandbox\"\n    }\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://anypoint-platform-management-utility.uk-e1.cloudhub.io/api/management-plane/assets/migrate",
+							"protocol": "http",
+							"host": [
+								"anypoint-platform-management-utility",
+								"uk-e1",
+								"cloudhub",
+								"io"
+							],
+							"path": [
+								"api",
+								"management-plane",
+								"assets",
+								"migrate"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Phase 2 - Migrate Assets (CH or RTF)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"fromBusinessGroup\": \"Shell\",\n    \"toBusinessGroup\": \"Customers\",\n    \"environmentSpecificAssets\": {\n        \"fromEnvironment\": \"Sandbox\",\n        \"toEnvironment\": \"Sandbox\",\n        \"runtimeManager\": {\n            \"deleteAsset\": false,\n            \"cloudHubAssetName\": \"accounts-and-transactions-proxy\",\n            \"properties\": {\n                \"anypoint.platform.client_id\": \"xxxxxxxxxxxxx\",\n                \"anypoint.platform.client_secret\": \"xxxxxxxxxxxxx\",\n                \"api.id\": \"18753768\"\n            }\n        }\n    }\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://anypoint-platform-management-utility.uk-e1.cloudhub.io/api/management-plane/assets/migrate",
+							"protocol": "http",
+							"host": [
+								"anypoint-platform-management-utility",
+								"uk-e1",
+								"cloudhub",
+								"io"
+							],
+							"path": [
+								"api",
+								"management-plane",
+								"assets",
+								"migrate"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Phase 2 - Migrate Assets (CH or RTF) - Rollback",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"fromBusinessGroup\": \"Shell\",\n    \"toBusinessGroup\": \"Customers\",\n    \"environmentSpecificAssets\": {\n        \"fromEnvironment\": \"Sandbox\",\n        \"toEnvironment\": \"Sandbox\",\n        \"runtimeManager\": {\n            \"deleteAsset\": false,\n            \"cloudHubAssetName\": \"accounts-and-transactions-proxy\",\n            \"properties\": {\n                \"anypoint.platform.client_id\": \"xxxxxxxxxxxxx\",\n                \"anypoint.platform.client_secret\": \"xxxxxxxxxxxxx\",\n                \"api.id\": \"18753768\"\n            }\n        }\n    }\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://anypoint-platform-management-utility.uk-e1.cloudhub.io/api/management-plane/assets/migrate/rollback",
+							"protocol": "http",
+							"host": [
+								"anypoint-platform-management-utility",
+								"uk-e1",
+								"cloudhub",
+								"io"
+							],
+							"path": [
+								"api",
+								"management-plane",
+								"assets",
+								"migrate",
+								"rollback"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Phase 2 - Migrate Assets (CH or RTF) - Commit",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"fromBusinessGroup\": \"Shell\",\n    \"toBusinessGroup\": \"Customers\",\n    \"environmentSpecificAssets\": {\n        \"fromEnvironment\": \"Sandbox\",\n        \"toEnvironment\": \"Sandbox\",\n        \"runtimeManager\": {\n            \"deleteAsset\": true,\n            \"cloudHubAssetName\": \"accounts-and-transactions-proxy\",\n            \"properties\": {\n                \"anypoint.platform.client_id\": \"xxxxxxxxxxxxx\",\n                \"anypoint.platform.client_secret\": \"xxxxxxxxxxxxx\",\n                \"api.id\": \"18753768\"\n            }\n        }\n    }\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://anypoint-platform-management-utility.uk-e1.cloudhub.io/api/management-plane/assets/migrate/commit",
+							"protocol": "http",
+							"host": [
+								"anypoint-platform-management-utility",
+								"uk-e1",
+								"cloudhub",
+								"io"
+							],
+							"path": [
+								"api",
+								"management-plane",
+								"assets",
+								"migrate",
+								"commit"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Phase 1 - Migrate Assets (DC, EXC, APIM) - Rollback",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"fromBusinessGroup\": \"Shell\",\n    \"toBusinessGroup\": \"Customers\",\n    \"designCenterAssetName\": \"Account and Transaction Sandbox\",\n    \"exchangeAssetName\": \"account-and-transaction-sandbox\",\n    \"environmentSpecificAssets\": {\n        \"fromEnvironment\": \"Sandbox\",\n        \"toEnvironment\": \"Sandbox\",\n        \"apiManagerAssetName\": \"account-and-transaction-sandbox\"\n    }\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://anypoint-platform-management-utility.uk-e1.cloudhub.io/api/management-plane/assets/migrate/rollback",
+							"protocol": "http",
+							"host": [
+								"anypoint-platform-management-utility",
+								"uk-e1",
+								"cloudhub",
+								"io"
+							],
+							"path": [
+								"api",
+								"management-plane",
+								"assets",
+								"migrate",
+								"rollback"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Phase 1 - Migrate Assets (DC, EXC, APIM) - Commit",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"fromBusinessGroup\": \"Shell\",\n    \"toBusinessGroup\": \"Customers\",\n    \"designCenterAssetName\": \"Account and Transaction Sandbox\",\n    \"exchangeAssetName\": \"account-and-transaction-sandbox\",\n    \"environmentSpecificAssets\": {\n        \"fromEnvironment\": \"Sandbox\",\n        \"toEnvironment\": \"Sandbox\",\n        \"apiManagerAssetName\": \"account-and-transaction-sandbox\"\n    }\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://anypoint-platform-management-utility.uk-e1.cloudhub.io/api/management-plane/assets/migrate/commit",
+							"protocol": "http",
+							"host": [
+								"anypoint-platform-management-utility",
+								"uk-e1",
+								"cloudhub",
+								"io"
+							],
+							"path": [
+								"api",
+								"management-plane",
+								"assets",
+								"migrate",
+								"commit"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Copy Assets (MQ)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"fromBusinessGroup\": \"Shell\",\n    \"toBusinessGroup\": \"Customers\",\n    \"environmentSpecificAssets\": {\n        \"fromEnvironment\": \"Sandbox\",\n        \"toEnvironment\": \"Sandbox\",\n        \"anypointMQ\": {\n            \"region\": \"us-east-1\",\n            \"destinations\": [\n                \"migration-q1\",\n                \"migration-dlq1\"\n            ],\n            \"clients\": [\n                \"migration-c1\"\n            ]\n        }\n    }\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://anypoint-platform-management-utility.uk-e1.cloudhub.io/api/management-plane/assets/purge",
+							"protocol": "http",
+							"host": [
+								"anypoint-platform-management-utility",
+								"uk-e1",
+								"cloudhub",
+								"io"
+							],
+							"path": [
+								"api",
+								"management-plane",
+								"assets",
+								"purge"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Purge Assets (MQ)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"fromBusinessGroup\": \"Shell\",\n    \"toBusinessGroup\": \"Customers\",\n    \"environmentSpecificAssets\": {\n        \"fromEnvironment\": \"Sandbox\",\n        \"toEnvironment\": \"Sandbox\",\n        \"anypointMQ\": {\n            \"region\": \"us-east-1\",\n            \"destinations\": [\n                \"migration-q1\",\n                \"migration-dlq1\"\n            ],\n            \"clients\": [\n                \"migration-c1\"\n            ]\n        }\n    }\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://anypoint-platform-management-utility.uk-e1.cloudhub.io/api/management-plane/assets/copy",
+							"protocol": "http",
+							"host": [
+								"anypoint-platform-management-utility",
+								"uk-e1",
+								"cloudhub",
+								"io"
+							],
+							"path": [
+								"api",
+								"management-plane",
+								"assets",
+								"copy"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Runtime Plane",
+			"item": [
+				{
+					"name": "Get CloudHub Applications",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://anypoint-platform-management-utility.uk-e1.cloudhub.io/api/runtime-plane/CloudHub/applications?businessGroups=&environments=&applications=",
+							"protocol": "http",
+							"host": [
+								"anypoint-platform-management-utility",
+								"uk-e1",
+								"cloudhub",
+								"io"
+							],
+							"path": [
+								"api",
+								"runtime-plane",
+								"CloudHub",
+								"applications"
+							],
+							"query": [
+								{
+									"key": "businessGroups",
+									"value": ""
+								},
+								{
+									"key": "environments",
+									"value": ""
+								},
+								{
+									"key": "applications",
+									"value": ""
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get RTF Applications",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://anypoint-platform-management-utility.uk-e1.cloudhub.io/api/runtime-plane/RTF/applications?businessGroups=&environments=&applications=",
+							"protocol": "http",
+							"host": [
+								"anypoint-platform-management-utility",
+								"uk-e1",
+								"cloudhub",
+								"io"
+							],
+							"path": [
+								"api",
+								"runtime-plane",
+								"RTF",
+								"applications"
+							],
+							"query": [
+								{
+									"key": "businessGroups",
+									"value": ""
+								},
+								{
+									"key": "environments",
+									"value": ""
+								},
+								{
+									"key": "applications",
+									"value": ""
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Patch RTF Applications",
+					"request": {
+						"method": "PATCH",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"runtimeVersion\": [\n        {\n            \"from\": \"4.2.1\",\n            \"to\": \"4.2.1:20210222-15\"\n        },\n        {\n            \"from\": \"4.2.2\",\n            \"to\": \"4.2.2:20210915-5\"\n        },\n        {\n            \"from\": \"4.3.0\",\n            \"to\": \"4.3.0:20211104-2\"\n        },\n        {\n            \"from\": \"4.4.0\",\n            \"to\": \"4.4.0:20211104-4\"\n        }\n    ]\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://anypoint-platform-management-utility.uk-e1.cloudhub.io/api/runtime-plane/RTF/applications?businessGroups=&environments=&applications=",
+							"protocol": "http",
+							"host": [
+								"anypoint-platform-management-utility",
+								"uk-e1",
+								"cloudhub",
+								"io"
+							],
+							"path": [
+								"api",
+								"runtime-plane",
+								"RTF",
+								"applications"
+							],
+							"query": [
+								{
+									"key": "businessGroups",
+									"value": ""
+								},
+								{
+									"key": "environments",
+									"value": ""
+								},
+								{
+									"key": "applications",
+									"value": ""
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"auth": {
+		"type": "bearer",
+		"bearer": [
+			{
+				"key": "token",
+				"value": "{{access_token}}",
+				"type": "string"
+			}
+		]
+	},
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "access_token",
+			"value": "<To Be Set>"
+		}
+	]
+}

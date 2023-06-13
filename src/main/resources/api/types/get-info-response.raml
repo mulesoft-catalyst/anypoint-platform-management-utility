@@ -1,0 +1,46 @@
+#%RAML 1.0 DataType
+description: The platform business group and environment information
+type: object
+properties:
+  businessGroups:
+    type: array
+    items:
+      type: object
+      properties:
+        id: 
+          type: string
+          description: The ID of the Business Group
+          example: "17efea23-7963-461d-83a9-b41117e04f5c"
+        name: 
+          type: string
+          description: The Name of the Business Group
+          example: "MuleSoft"
+        available:
+          type: object
+          description: The entitlements that are currently available for the business group. This is the difference between the "assigned" entitlement to the business group and the "reassigned" entitlements to the child business groups
+          properties:
+            vCoresProduction:
+              type: number
+              description: The number of Production vCores available for deployment to the business group
+            vCoresSandbox:
+              type: number
+              description: The number of Sandbox vCores available for deployment to the business group
+            vCoresDesign:
+              type: number
+              description: The number of Design vCores available for deployment to the business group
+            staticIps:
+              type: number
+              description: The number os static ips available for deployment to the business group              
+        environments: 
+          type: array
+          items:
+            type: object
+            properties:
+              id: 
+                type: string
+                description: The ID of the Environment
+                example: "c35f4f79-1df2-41c6-a4b2-08cccf6b3e2b"
+              name: 
+                type: string
+                description: The Name of the Environment
+                example: "Development"

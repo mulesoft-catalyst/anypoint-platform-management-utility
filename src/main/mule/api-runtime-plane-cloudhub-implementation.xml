@@ -1,0 +1,521 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd 
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+	<sub-flow name="get-and-patch-CloudHub-applications-common-sub-flow" doc:id="04dc90c9-71d8-44e3-91b9-9a528fa2bf34" >
+		<parallel-foreach doc:name="Parallel For Each" doc:id="53b4ea4c-9e2f-4ed1-98b8-2af6a706469d" collection="#[payload.businessGroups]" maxConcurrency="${parallel.foreach.maxConcurrency}">
+			<set-variable value="#[payload.name]" doc:name="Set Business Group Name" doc:id="6e81dbcd-eafc-4031-9bf6-75d6690f8e59" variableName="bgName" />
+			<parallel-foreach doc:name="Parallel For Each" doc:id="36cb89b3-fb30-42fe-b4b4-07a7e0a1e31d" collection="#[payload.environments]" maxConcurrency="${parallel.foreach.maxConcurrency}">
+				<set-variable value="#[payload.name]" doc:name="Set Environment Name" doc:id="09a42169-ba97-4064-b1b8-f811d136b72b" variableName="envName" />
+				<http:request method="GET" doc:name="Get CloudHub Applications" doc:id="ca4c4a22-32e2-4fa9-b2f8-be265a63f50a" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.applications.cloudhub}">
+					<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader,
+	"X-ANYPNT-ENV-ID": payload.id
+}]]]></http:headers>
+					<http:response-validator>
+						<http:success-status-code-validator values="200..499" />
+					</http:response-validator>
+				</http:request>
+				<choice doc:name="Choice" doc:id="d78e9ecb-65eb-4cfe-afa9-19ebc726d4f7">
+					<when expression="#[attributes.statusCode == 200]">
+						<choice doc:name="Choice" doc:id="2bb63f62-9021-4620-9183-ad98df008573" >
+							<when expression="#[upper(vars.requestMethod) == 'PATCH']">
+								<ee:transform doc:name="Prepare Patch App Request" doc:id="e5732a10-f75a-4512-885a-dd6cc17f67ca">
+									<ee:message>
+										<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+									</ee:message>
+								</ee:transform>
+							</when>
+						</choice>
+						<ee:transform doc:name="Transform App Info" doc:id="ac8b837a-e78a-4efe-a778-857851346ec5">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+payload map (
+	{
+		"name": $.domain,
+		"businessGroup": vars.bgName,
+		"environment": vars.envName,
+		"status": $.status,
+		"runtimeVersion": $.muleVersion.version ++ ':' ++ $.muleVersion.updateId,
+		"instanceCount": $.workers.amount,
+		"cpu": $.workers."type".cpu,
+		"memory": $.workers."type".memory replace " memory" with ""
+	}	
+) filter ((item, index) ->  
+    ((sizeOf(vars.applicationFilter default []) == 0) or (vars.applicationFilter contains item.name)) 
+)
+]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+					</when>
+					<otherwise>
+						<ee:transform doc:name="No App Info" doc:id="b273a377-7d43-4c8c-9e79-f5564ee6c229">
+							<ee:message>
+								<ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+[]]]></ee:set-payload>
+							</ee:message>
+						</ee:transform>
+					</otherwise>
+				</choice>
+			</parallel-foreach>
+		</parallel-foreach>
+		<ee:transform doc:name="Extract Info from Composite Structure" doc:id="61ca1503-ce75-4084-841b-1668810fb04f" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+{
+	"applications": flatten(flatten(payload map (
+						$.payload map (
+							$.payload
+							)
+						)))
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</sub-flow>
+
+	<flow name="get-CloudHub-applications-flow" doc:id="ff48f1a5-3409-4f9d-86dd-7251198fbb88" >
+		<logger level="INFO" doc:name="Logger" doc:id="b7565222-43ce-4724-92b2-9ea137427349" message="Get CloudHub Applications - Entry"/>
+		<flow-ref doc:name="Get Info (Common)" doc:id="eab2ecd8-8bdb-4a42-85e3-c36bb043935f" name="get-info-common-sub-flow"/>
+		<flow-ref doc:name="Get CloudHub Applications" doc:id="01e40ae0-ca1e-44c9-983d-f8a67e56ca2f" name="get-and-patch-CloudHub-applications-common-sub-flow" />
+		<flow-ref doc:name="Common Completion" doc:id="ec55a9a6-f103-4b49-9b13-f54ec1f48c8e" name="common-completion-sub-flow" />
+		<logger level="INFO" doc:name="Logger" doc:id="07611070-99da-4135-bad6-4351b2b83b53" message="Get CloudHub Applications - Complete"/>
+		<error-handler ref="common-anypoint-platform-management-error-handler" />        
+	</flow>
+
+	<flow name="patch-CloudHub-applications-flow" doc:id="1c226132-fcac-44fb-84ca-ac769a03ecd0" >
+		<logger level="INFO" doc:name="Logger" doc:id="e1e47079-3d78-48e8-9f0b-02d3010c0aa0" message="Patch CloudHub Applications - Entry"/>
+		<set-variable value="#[payload]" doc:name="Set Input Payload" doc:id="40872fd7-027d-4913-aacb-0a99647bf8f7" variableName="inputPayload"/>
+		<flow-ref doc:name="Get Info (Common)" doc:id="d424d08c-373e-465a-9232-a753ba6ad788" name="get-info-common-sub-flow"/>
+		<flow-ref doc:name="Patch CloudHub Applications" doc:id="3ac1d9a8-6eed-4611-839b-700f36880562" name="get-and-patch-CloudHub-applications-common-sub-flow"/>
+		<flow-ref doc:name="Common Completion" doc:id="183cdc29-2697-44df-aeb5-7ca0dbb015df" name="common-completion-sub-flow" />
+		<logger level="INFO" doc:name="Logger" doc:id="98c82fd2-78f6-4934-bc98-c39d92c2f115" message="Patch CloudHub Applications - Complete" />
+		<error-handler ref="common-anypoint-platform-management-error-handler" />        
+	</flow>
+
+	<sub-flow name="post-assets-migrate-runtimemanager-cloudhub-sub-flow" doc:id="7dd3bd9c-2df3-4c98-a00b-f6afcb22a811" >
+		<logger level="INFO" doc:name="Logger" doc:id="17acab81-af71-4846-bf68-07ddfd29e0c0" message='#[output application/java&#10;---&#10;"Runtime Manager - CloudHub Asset Migration  for " ++ payload.environmentSpecificAssets.runtimeManager.cloudHubAssetName]'/>
+		<set-variable value="#[payload.environmentSpecificAssets.runtimeManager.cloudHubAssetName]" doc:name="Set Source Runtime Manager CloudHub Asset Name" doc:id="ce62ba87-bfe6-4ac9-a1f7-bd7054858b1a" variableName="rtmCHSourceAssetName"/>
+		<set-variable value="#[output application/java&#10;---&#10;payload.environmentSpecificAssets.runtimeManager.cloudHubAssetName ++&#10;if ((payload.environmentSpecificAssets.runtimeManager.deleteAsset &#10;	default false) == false) '${anypoint.platform.runtimemanager.application.suffix}'&#10;else  &quot;&quot;]" doc:name="Set Target Runtime Manager CloudHub Asset Name" doc:id="abc7a912-1b83-49d9-b5d6-08fa2b21d341" variableName="rtmCHTargetAssetName" />
+		<set-variable value="#[payload.environmentSpecificAssets.runtimeManager.properties]" doc:name="Set Runtime Manager Property Values" doc:id="7d379232-f64b-47d0-96bd-f0eab06b2ab3" variableName="rtmCHProperties"/>
+		<flow-ref doc:name="Post Assets Migrate - Runtime Manager CloudHub (Common)" doc:id="5c76b542-a1ee-4c43-8b67-119e5e402fa1" name="common-post-assets-migrate-runtimemanager-cloudhub-sub-flow" />
+		<logger level="INFO" doc:name="Logger" doc:id="04857326-a300-4032-bb67-95c60a80f6ed" message="Runtime Manager - CloudHub Asset Migration - Complete"/>
+</sub-flow>
+
+	<sub-flow name="post-assets-migrate-rollback-or-commit-runtimemanager-cloudhub-sub-flow" doc:id="c09ed4e0-ca7e-4679-b490-a3ae7a213293" >
+		<logger level="INFO" doc:name="Logger" doc:id="69cceb0e-1c0c-4da8-9e32-387a4b6a088b" message='#[output application/java&#10;---&#10;"Runtime Manager - CloudHub Asset Migration " ++ vars.confirmationType ++ " for " ++ payload.environmentSpecificAssets.runtimeManager.cloudHubAssetName]'/>
+		<set-variable value="#[output application/json&#10;---&#10;payload.environmentSpecificAssets.runtimeManager.cloudHubAssetName ++ '${anypoint.platform.runtimemanager.application.suffix}']" doc:name="Set Source Runtime Manager CloudHub Asset Name" doc:id="b447f63f-4415-4533-8c9a-6a53ebf0a2a1" variableName="rtmCHSourceAssetName" />
+		<set-variable value="#[payload.environmentSpecificAssets.runtimeManager.cloudHubAssetName]" doc:name="Set Target Runtime Manager CloudHub Asset Name" doc:id="a16fff59-748e-450e-91fd-c3b974d17101" variableName="rtmCHTargetAssetName" />
+		<set-variable value="#[payload.environmentSpecificAssets.runtimeManager.properties]" doc:name="Set Runtime Manager Property Values" doc:id="7ce706a2-81e8-411b-b9da-f42665137564" variableName="rtmCHProperties" />
+		<scatter-gather doc:name="Scatter-Gather" doc:id="f3430eb0-87b6-494a-90f5-9a2c34afa030">
+					<route>
+				<http:request method="GET" doc:name="Get Source Runtime Manager App Details" doc:id="fc0b9080-4fe8-4ff8-b27b-2c14d407df20" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.applications.cloudhub}/{domain}" target="rtmCHOldAssetDetails">
+					<http:headers ><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader,
+	"X-ANYPNT-ENV-ID": vars.fromEnvId
+}]]]></http:headers>
+					<http:uri-params ><![CDATA[#[output application/java
+---
+{
+	"domain": vars.rtmCHTargetAssetName
+}]]]></http:uri-params>
+					<http:response-validator >
+						<http:success-status-code-validator values="200..499" />
+					</http:response-validator>
+				</http:request>
+					
+</route>
+			<route >
+				<http:request method="GET" doc:name="Get Target Runtime Manager App Details" doc:id="284f1d9a-a223-46f1-9d42-270f1d77d663" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.applications.cloudhub}/{domain}" target="rtmCHNewAssetDetails" >
+					<http:headers ><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader,
+	"X-ANYPNT-ENV-ID": vars.toEnvId
+}]]]></http:headers>
+					<http:uri-params ><![CDATA[#[output application/java
+---
+{
+	"domain": vars.rtmCHSourceAssetName
+}]]]></http:uri-params>
+					<http:response-validator >
+						<http:success-status-code-validator values="200..499" />
+					</http:response-validator>
+				</http:request>
+			
+</route>
+				</scatter-gather>
+		<choice doc:name="Choice" doc:id="2c415db8-8f02-42e4-a122-890c029bf466" >
+			<when expression='#[vars.rtmCHOldAssetDetails.domain != null and vars.rtmCHOldAssetDetails.status == "UNDEPLOYED"]'>
+				<choice doc:name="Choice" doc:id="3db14e97-14b8-460b-bb01-ff1ddc6a6626" >
+					<when expression='#[vars.rtmCHNewAssetDetails.domain != null and vars.rtmCHNewAssetDetails.status == "STARTED"]'>
+						<choice doc:name="Choice" doc:id="c40be9dc-674d-4e0c-8e36-a2c67a01b096">
+			<when expression='#[vars.confirmationType == "commit"]'>
+								<http:request method="DELETE" doc:name="DELETE Source Runtime Manager App" doc:id="f846dde7-4db9-4cf9-a619-e2e5c406a973" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.applications.cloudhub}/{domain}" responseTimeout="${anypoint.platform.api.timeout}" target="appDeleteResponse">
+									<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader,
+	"X-ANYPNT-ENV-ID": vars.fromEnvId
+}]]]></http:headers>
+									<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"domain": vars.rtmCHOldAssetDetails.domain
+}]]]></http:uri-params>
+								</http:request>
+								<until-successful maxRetries="${anypoint.platform.api.retry.count}" doc:name="Wait until App is Deleted" doc:id="d71094aa-642d-411e-8688-e86530fedeab" millisBetweenRetries="${anypoint.platform.api.retry.interval}">
+									<http:request method="GET" doc:name="Check Runtime Manager App Name Availability" doc:id="6ffaf91d-4c76-474a-bad9-3d64f382d4d2" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.applications.check-domain}" target="domainCheckResponse">
+										<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+							<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"domain": vars.rtmCHOldAssetDetails.domain
+}]]]></http:uri-params>
+										<http:response-validator>
+											<http:success-status-code-validator values="200..499" />
+										</http:response-validator>
+									</http:request>
+									<choice doc:name="Choice" doc:id="1b83e929-6110-458d-8fe8-83a2d175fa73" >
+										<when expression="#[(vars.domainCheckResponse.available default true) == false]">
+											<logger level="INFO" doc:name="Logger" doc:id="dbb0ec1b-13d7-47b2-a699-ee140caa62c7" message='#["CloudHub App Deletion in progress for " ++ vars.rtmCHOldAssetDetails.domain]'/>
+											<raise-error doc:name="CloudHub Deletion In Progress" doc:id="86e05799-e9fd-4807-9228-3a77dfc86dba" type="AP_MGMT:CLOUDHUB_DELETION_INPROGRESS" description="CloudHub App Deletion is in progress"/>
+										</when>
+									</choice>
+								
+</until-successful>
+								<set-variable value="#[vars.fromBGId]" doc:name="Set Backup From BG Id" doc:id="ea96f55c-2eea-4247-95af-28d13813eb06" variableName="fromBGIdBackup" />
+								<set-variable value="#[vars.fromEnvId]" doc:name="Set Backup From Env Id" doc:id="fde34aea-a24f-4667-b543-010a99b07b48" variableName="fromEnvIdBackup" />
+				<set-variable value="#[vars.toBGId]" doc:name="Set Commit From BG Id" doc:id="6c812045-cd83-44dc-a478-aa6ed42ee034" variableName="fromBGId" />
+								<set-variable value="#[vars.toEnvId]" doc:name="Set Commit From Env Id" doc:id="73bc6ab1-52e2-4980-a236-b80c5f50b4cc" variableName="fromEnvId" />
+								<flow-ref doc:name="Post Assets Migrate Commit - Runtime Manager CloudHub (Common)" doc:id="84758b46-9558-4ab6-8be3-e23187b7baa5" name="common-post-assets-migrate-runtimemanager-cloudhub-sub-flow" />
+								<set-variable value="#[vars.fromBGIdBackup]" doc:name="Set Original BG Id" doc:id="339a071b-cd8f-47dc-aa8f-527cb404b6bb" variableName="fromBGId" />
+				<set-variable value="#[vars.fromEnvIdBackup]" doc:name="Set Original Env Id" doc:id="7bb80450-ce6c-484e-8055-e90adc9d15de" variableName="fromEnvId" />
+			
+</when>
+			<otherwise>
+								<set-variable value="STOP" doc:name="Set App Status Change (Target)" doc:id="973d8490-e064-4853-bb9e-3b97b61e17ee" variableName="statusChange" />
+								<set-variable value="#[vars.rtmCHNewAssetDetails.domain]" doc:name="Set App Status Change Name (Target)" doc:id="bc544a25-f776-47f8-b24b-b6c2d3d956f8" variableName="statusChangeCHAssetName" />
+								<set-variable value="#[vars.toEnvId]" doc:name="Set App Status Change Environment (Target)" doc:id="f9606591-0b78-4f97-82ee-c7b9b158c801" variableName="statusChangeEnvId" />
+								<flow-ref doc:name="STOP Target Runtime Manager App" doc:id="40a24ae7-b84c-4fa2-a757-a282b9e5b389" name="common-status-change-runtimemanager-cloudhub-sub-flow" target="appStopResponse" />
+								<choice doc:name="Choice" doc:id="099aff3a-47dd-42c9-abbd-9c9ad2716509">
+									<when expression="#[vars.rtmCHNewAssetDetails.staticIPsEnabled == true]">
+										<set-variable value="#[vars.rtmCHNewAssetDetails.ipAddresses[0].address]" doc:name="Set Static IP Address (Source)" doc:id="b77ae120-eae6-4d24-9ace-f46ea33a03c7" variableName="appStaticIpAddress" />
+										<http:request method="DELETE" doc:name="Release Target Runtime Manager App Static IPs" doc:id="3d8ce5b3-f142-4aab-a44f-33c2a04b884f" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.applications.cloudhub}/{domain}/staticips/{region}" target="appDeleteStaticIpResponse">
+											<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader,
+	"X-ANYPNT-ENV-ID": vars.toEnvId
+}]]]></http:headers>
+											<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"domain": vars.rtmCHNewAssetDetails.domain,
+	"region": vars.rtmCHNewAssetDetails.ipAddresses[0].regionId
+}]]]></http:uri-params>
+										</http:request>
+									</when>
+								</choice>
+								<http:request method="DELETE" doc:name="DELETE Target Runtime Manager App" doc:id="4e262930-5df0-439e-a7f8-916e9cdb2716" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.applications.cloudhub}/{domain}" responseTimeout="${anypoint.platform.api.timeout}" target="appDeleteResponse">
+											<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader,
+	"X-ANYPNT-ENV-ID": vars.toEnvId
+}]]]></http:headers>
+											<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"domain": vars.rtmCHNewAssetDetails.domain
+}]]]></http:uri-params>
+										</http:request>
+								<set-variable value="START" doc:name="Set App Status Change (Source)" doc:id="e02f97d8-55fa-43f0-af7d-7212a96e569f" variableName="statusChange" />
+								<set-variable value="#[vars.rtmCHOldAssetDetails.domain]" doc:name="Set App Status Change Name (Source)" doc:id="4a56e97f-c0db-4aa2-8634-b75a2986cffe" variableName="statusChangeCHAssetName" />
+								<set-variable value="#[vars.fromEnvId]" doc:name="Set App Status Change Environment (Source)" doc:id="1068335f-b9ff-4264-a49d-e89f4ba29c52" variableName="statusChangeEnvId" />
+								<flow-ref doc:name="START Source Runtime Manager App" doc:id="3d1880a9-beef-4871-8ecc-3e7206260e60" name="common-status-change-runtimemanager-cloudhub-sub-flow" target="startSourceResponse" />
+								<logger level="INFO" doc:name="Logger" doc:id="b74c1bb4-04df-497a-bde3-3a0210780bff" message='#[output application/java&#10;---&#10;"App Name - " ++ vars.rtmCHTargetAssetName ++ &#10;", App Status - " ++ vars.startSourceResponse ++ &#10;", App Static Ip - " ++ (vars.appStaticIpAddress default "None")]'/>
+			
+</otherwise>
+		</choice>
+					</when>
+					<otherwise >
+						<logger level="INFO" doc:name="Logger" doc:id="3428339e-8821-4361-82d3-d938bac3083f" message='#["No Target Runtime Manager - CloudHub Asset found in STARTED status to " ++ vars.confirmationType]'/>
+					</otherwise>
+				</choice>
+			</when>
+			<otherwise >
+				<logger level="INFO" doc:name="Logger" doc:id="fd87ff51-09c0-4369-bc69-c27385456569" message='#["No Source Runtime Manager - CloudHub Asset found in UNDEPLOYED status to " ++ vars.confirmationType]'/>
+			</otherwise>
+		</choice>		
+	</sub-flow>
+
+	<sub-flow name="common-post-assets-migrate-runtimemanager-cloudhub-sub-flow" doc:id="e3d62872-ab45-4722-8259-da04f758168b" >
+		<http:request method="GET" doc:name="Get Source Runtime Manager App Details" doc:id="86bbc851-6b7d-4dc2-86cc-6786a7e302f8" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.applications.cloudhub}/{domain}">
+			<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader,
+	"X-ANYPNT-ENV-ID": vars.fromEnvId
+}]]]>		</http:headers>
+			<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"domain": vars.rtmCHSourceAssetName
+}]]]>		</http:uri-params>
+			<http:response-validator>
+				<http:success-status-code-validator values="200..499" />
+			</http:response-validator>
+		
+</http:request>
+		<choice doc:name="Choice" doc:id="0fa9e9fd-a60d-4998-ba72-85c8c76e075a">
+			<when expression="#[payload.domain != null]">
+				<choice doc:name="Choice" doc:id="61d5f3dd-7202-428d-ac4a-2a4d796b7a5a">
+			<when expression='#[payload.status != "UNDEPLOYED"]'>
+						<http:request method="GET" doc:name="Check Runtime Manager App Name Availability" doc:id="fb3ae910-8330-45d1-9f06-02c7cf07c39f" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.applications.check-domain}" target="domainCheckResponse">
+							<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+							<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"domain": vars.rtmCHTargetAssetName
+}]]]></http:uri-params>
+							<http:response-validator>
+								<http:success-status-code-validator values="200..499" />
+							</http:response-validator>
+						</http:request>
+						<choice doc:name="Choice" doc:id="f875c9ea-cb0f-4360-8cad-0dd300193390">
+							<when expression="#[vars.domainCheckResponse.available == true or vars.rtmCHTargetAssetName == vars.rtmCHSourceAssetName]">
+								<set-variable value="#[vars.fromEnvId]" doc:name="Set App Status Change Environment (Source)" doc:id="c493e2f8-a7be-49ce-b9fe-a28feda87a76" variableName="statusChangeEnvId" />
+								<set-variable value="#[vars.rtmCHSourceAssetName]" doc:name="Set App Status Change Name (Source)" doc:id="0eef34cf-3b5d-45cd-8a69-7c88c8b1420a" variableName="statusChangeCHAssetName" />
+								<set-variable value="STOP" doc:name="Set App Status Change (Source)" doc:id="0898bc4a-4150-4ace-b938-fa8ff167e3ff" variableName="statusChange" />
+								<flow-ref doc:name="STOP Source Runtime Manager App" doc:id="401a2b07-d871-4c5a-93fe-dcdd14669090" name="common-status-change-runtimemanager-cloudhub-sub-flow" target="appStopResponse" />
+								<http:request method="GET" doc:name="Get Source Runtime Manager App JAR File" doc:id="4dea55fe-0b93-4214-9a46-bb0f8f0d2873" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.applications.download-file}" target="appFile" responseTimeout="${anypoint.platform.api.timeout}">
+			<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]>		</http:headers>
+			<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.fromBGId,
+	"environmentId": vars.fromEnvId,
+	"domain": vars.rtmCHSourceAssetName,
+	"filename": payload.fileName
+}]]]>		</http:uri-params>
+		</http:request>
+								<choice doc:name="Choice" doc:id="fc95b705-2000-4e91-bb10-fa7bb997a49a">
+			<when expression="#[payload.staticIPsEnabled == true]">
+				<set-variable value="#[payload.ipAddresses[0].address]" doc:name="Set Static IP Address (Source)" doc:id="f0745b71-3e73-46b6-b09b-a86b5a6f071a" variableName="appStaticIpAddress" />
+								<http:request method="DELETE" doc:name="Release Source Runtime Manager App Static IPs" doc:id="47e06abf-54ce-498a-87da-15cbe40011d6" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.applications.cloudhub}/{domain}/staticips/{region}" target="appDeleteStaticIpResponse">
+					<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader,
+	"X-ANYPNT-ENV-ID": vars.fromEnvId
+}]]]></http:headers>
+					<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"domain": vars.rtmCHSourceAssetName,
+	"region": payload.ipAddresses[0].regionId
+}]]]></http:uri-params>
+				
+</http:request>
+
+			
+			</when>
+		</choice>
+								<try doc:name="Try" doc:id="eb231837-b3cb-473e-972f-85795091d019">
+									<choice doc:name="Choice" doc:id="c574d265-08cb-47cc-b656-734bad38d7c8">
+									<when expression="#[vars.rtmCHTargetAssetName == vars.rtmCHSourceAssetName]">
+										<http:request method="DELETE" doc:name="DELETE Source Runtime Manager App" doc:id="59896f19-7949-44af-bdcf-6e68cd866462" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.applications.cloudhub}/{domain}" target="appDeleteResponse" responseTimeout="${anypoint.platform.api.timeout}">
+											<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader,
+	"X-ANYPNT-ENV-ID": vars.fromEnvId
+}]]]>		</http:headers>
+			<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"domain": vars.rtmCHSourceAssetName
+}]]]>		</http:uri-params>				
+										</http:request>
+									
+									
+</when>
+								</choice>
+									<ee:transform doc:name="Create Application Deployment Request" doc:id="8a1efcdd-2cca-4a42-9263-a17e8f618766">
+			<ee:message>
+				<ee:set-payload><![CDATA[input payload application/json
+output multipart/form-data boundary="--------------------------ab12cd"
+---
+{
+	parts: {
+		"file": {
+			headers: {
+				"Content-Disposition": {
+		          "name": "file",
+		          "filename": payload.fileName
+		        },				
+				"Content-Type": "application/octet-stream"
+			},
+			content: vars.appFile
+		},		
+		autoStart: {
+			headers: {
+				"Content-Type": "text/plain"
+			},
+			content: "false"
+		},
+		"appInfoJson": {
+			headers: {
+				"Content-Type": "application/json"
+			},
+			content: payload update {
+				case .domain! -> vars.rtmCHTargetAssetName
+                case .properties -> (vars.rtmCHProperties default {} ++ payload.properties) distinctBy $$			
+			}
+		}
+	}	
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+									<until-successful maxRetries="${anypoint.platform.api.retry.count}" doc:name="Retry Deployment for Temporary Errors" doc:id="4ac29a70-97c9-46c0-8873-d2649c34db5d" millisBetweenRetries="${anypoint.platform.api.retry.interval}">
+							<http:request method="POST" doc:name="Deploy Target Runtime Manager App" doc:id="5b6d0261-9ff1-4fcb-aa0e-d58ee4649a81" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.applications.cloudhub}" responseTimeout="${anypoint.platform.api.timeout}">
+			<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader,
+	"X-ANYPNT-ENV-ID": vars.toEnvId
+}]]]>		</http:headers>
+											<http:response-validator >
+												<http:success-status-code-validator values="200..599"/>
+											</http:response-validator>
+		
+
+</http:request>
+										<choice doc:name="Choice" doc:id="dc8586a9-b06e-406a-a2d6-1d4f3fceda65" >
+											<when expression="#[payload.domain == null]">
+												<logger level="INFO" doc:name="Logger" doc:id="db29e7b0-b415-4293-b81c-b19d1641146c" message="#[payload]"/>
+												<raise-error doc:name="CloudHub Deployment Failed" doc:id="62c1c6b8-2869-4c5f-b01a-8c8062ec680b" type="AP_MGMT:CLOUDHUB_DEPLOYMENT_FAILED" description="#[payload]"/>
+											</when>
+										</choice>
+						</until-successful>
+									<set-variable value="#[vars.toEnvId]" doc:name="Set App Status Change Environment (Target)" doc:id="8e9ec592-1fd7-473e-8bf3-9778ee44dfa8" variableName="statusChangeEnvId" />
+					<set-variable value="#[vars.rtmCHTargetAssetName]" doc:name="Set App Status Change Name (Target)" doc:id="6a9590bc-1b94-4d47-a9fd-afa375ff141b" variableName="statusChangeCHAssetName" />
+					<set-variable value="START" doc:name="Set App Status Change (Target)" doc:id="0b5446d5-3a79-423d-8c7d-ec1c6518c47f" variableName="statusChange" />
+					<flow-ref doc:name="START Target Runtime Manager App" doc:id="fc795029-ccb3-46d0-9756-28d83380ab0e" name="common-status-change-runtimemanager-cloudhub-sub-flow" target="appStartResponse" />
+					<error-handler>
+						<on-error-propagate enableNotifications="true" logException="true" doc:name="Restart Source Runtime Manager App" doc:id="2d937cd1-aa20-46ce-b3e8-fac7a636f027" type="ANY">
+							<set-variable value="#[vars.fromEnvId]" doc:name="Set App Status Change Environment (Source)" doc:id="17e591f3-eb51-4fb0-8d51-fb8712803ac2" variableName="statusChangeEnvId" />
+							<set-variable value="#[vars.rtmCHAssetName]" doc:name="Set App Status Change Name (Source)" doc:id="d000bb8c-47a9-47ab-908d-cb97ea420b2e" variableName="statusChangeCHAssetName" />
+							<set-variable value="START" doc:name="Set App Status Change (Source)" doc:id="ad585990-fcdf-4b9b-93d1-fc001a5c1d36" variableName="statusChange" />
+							<flow-ref doc:name="START Source Runtime Manager App" doc:id="7a21995d-ba48-4298-adba-50a843dc35e3" name="common-status-change-runtimemanager-cloudhub-sub-flow" />						
+						</on-error-propagate>
+					</error-handler>
+				</try>
+								<logger level="INFO" doc:name="Logger" doc:id="73a3e4ba-577d-4177-aee1-f3915f89e8f6" message='#[output application/java&#10;---&#10;"Source App Name - " ++ vars.rtmCHSourceAssetName ++ &#10;" migrated to Target App Name - " ++ vars.rtmCHTargetAssetName ++ &#10;", Target App Status - " ++ vars.appStartResponse ++&#10;", Target App Static Ip - " ++ (vars.appStaticIpAddress default "None")]'/>
+							</when>
+							<otherwise >
+								<logger level="INFO" doc:name="Logger" doc:id="d099f29b-f7fd-4e88-84f4-5fc253087bfb" message='#["Runtime Manager - CloudHub Asset name " ++ vars.rtmCHTargetAssetName ++ " not available. Please delete the existing application with this name before retrying the migration"]'/>
+							</otherwise>
+						</choice>
+			
+
+</when>
+					<otherwise>
+						<logger level="INFO" doc:name="Logger" doc:id="94bc2b16-4413-4592-9095-c8e02b354eef" message='#["Runtime Manager - CloudHub Asset in " ++ payload.status ++ " status cannot be migrated"]'/>
+					</otherwise>
+		
+</choice>
+			</when>
+			<otherwise>
+				<logger level="INFO" doc:name="Logger" doc:id="d7ee1ece-fabf-4d41-a46a-23b4af866d48" message="No Runtime Manager - CloudHub Asset found to migrate"/>
+			</otherwise>
+		</choice>
+	</sub-flow>
+
+
+
+	<sub-flow name="common-status-change-runtimemanager-cloudhub-sub-flow" doc:id="5ecf87ae-ee7f-4e5c-b62c-cd3587c9e70f">
+		<http:request method="POST" doc:name="Change Status Runtime Manager App" doc:id="48607acc-9887-4807-82d8-dfa61722b2da" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.applications.cloudhub-status}" responseTimeout="${anypoint.platform.api.timeout}">
+					<http:body><![CDATA[#[%dw 2.0
+output application/json
+---
+{
+	"status": vars.statusChange,
+	"staticIpAddress": vars.appStaticIpAddress	
+}]]]></http:body>
+					<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader,
+	"X-ANYPNT-ENV-ID": vars.statusChangeEnvId,
+	"Content-Type": "application/json"
+}]]]></http:headers>
+			<http:uri-params ><![CDATA[#[output application/java
+---
+{
+	"domain" : vars.statusChangeCHAssetName
+}]]]></http:uri-params>
+			<http:response-validator >
+				<http:success-status-code-validator values="200..499" />
+			</http:response-validator>
+				
+</http:request>
+		<until-successful maxRetries="${anypoint.platform.api.retry.count}" doc:name="Retry Runtime Manager CloudHub Status Change Check" doc:id="f63757a5-016a-45ec-a903-9f159a3dcadb" millisBetweenRetries="${anypoint.platform.api.retry.interval}">
+			<http:request method="GET" doc:name="Get Runtime Manager App Status" doc:id="8e0672c4-3863-414e-b6a3-8b3fc170f9e4" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.applications.cloudhub-status}">
+			<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader,
+	"X-ANYPNT-ENV-ID": vars.statusChangeEnvId
+}]]]>		</http:headers>
+			<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"domain": vars.statusChangeCHAssetName
+}]]]>		</http:uri-params>
+				<http:response-validator >
+					<http:success-status-code-validator values="200..599" />
+				</http:response-validator>
+		
+</http:request>
+			<choice doc:name="Choice" doc:id="49318b00-6130-46f2-8060-53da4b495809" >
+				<when expression="#[(['DEPLOYING', 'UNDEPLOYING'] contains payload) or
+&#10;(payload == &quot;UNDEPLOYED&quot; and vars.statusChange == &quot;START&quot;) or
+&#10;(payload == &quot;STARTED&quot; and vars.statusChange == &quot;STOP&quot;)]">
+					<raise-error doc:name="Raise Error - App Status Change in Progress" doc:id="b5970fbc-9995-40f8-8078-2fda30b84f07" type="AP_MGMT:CH_APP_STATUS_CHANGE_INPROGRESS" description="App Status - #[payload]"/>
+				</when>
+			</choice>
+		</until-successful>	
+	</sub-flow>
+
+</mule>

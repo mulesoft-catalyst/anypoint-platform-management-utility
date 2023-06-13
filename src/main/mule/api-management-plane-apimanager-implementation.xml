@@ -1,0 +1,528 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+	<sub-flow name="post-assets-migrate-apimanager-sub-flow" doc:id="5682434c-bd74-4536-b373-dbbaaeb1788a" >
+		<logger level="INFO" doc:name="Logger" doc:id="d462dd45-b7ed-4ad6-b229-e184d2108e22" message='#["API Manager Asset Migration for " ++ payload.environmentSpecificAssets.apiManagerAssetName]'/>
+		<set-variable value="#[payload.environmentSpecificAssets.apiManagerAssetName]" doc:name="Set API Manager Asset Name" doc:id="065ae5ce-cb38-433a-ad13-9244840aa45d" variableName="apiMgrAssetName"/>
+		<set-variable value="#[payload.assetMinorVersionOverride]" doc:name="Set Asset Version Override" doc:id="0a78686a-7993-4384-b344-9e077af8d413" variableName="assetVersionOverride"/>
+		<http:request method="GET" doc:name="Get Source API Manager Instances" doc:id="59ab53fe-fb25-4bf9-bb86-45240323d28f" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.apimanager.apis}">
+					<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+			<http:uri-params ><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.fromBGId,
+	"environmentId": vars.fromEnvId
+}]]]></http:uri-params>
+			<http:query-params ><![CDATA[#[output application/java
+---
+{
+	"assetId": vars.apiMgrAssetName
+}]]]></http:query-params>
+		
+
+</http:request>
+		<choice doc:name="Choice" doc:id="bcdd1c5c-d58a-4902-be87-16c0898d6f35" >
+			<when expression="#[payload.total == 1]">
+				<foreach doc:name="For Each" doc:id="1506c4e9-ade2-4f3c-baf3-d220ad23b08d" collection="#[payload.assets[0].apis filter $.deprecated == false]">
+					<set-variable value="#[payload.id]" doc:name="Set Source API Instance ID" doc:id="2efcce61-26ff-44f8-961f-af864d4b4d25" variableName="fromApiId" />
+					<http:request method="GET" doc:name="Get Source API Manager Instance Details" doc:id="e196d380-0e7f-42b2-8b02-4f96e2c4ea55" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.apimanager.apis}/{apiId}">
+						<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+			<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.fromBGId,
+	"environmentId": vars.fromEnvId,
+	"apiId": vars.fromApiId
+}]]]></http:uri-params>
+		
+
+</http:request>
+					<http:request method="POST" doc:name="Create Target API Manager Instance" doc:id="b00ef45f-2173-420e-9d8a-440381fd11b8" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.apimanager.apis}">
+						<http:body><![CDATA[#[%dw 2.0
+output application/json
+---
+(payload update {
+	case .spec! -> {
+    	"groupId": vars.toBGId,
+    	"assetId": payload.assetId,
+    	"version": if (vars.assetVersionOverride != null) vars.assetVersionOverride ++ "." ++ (payload.assetVersion splitBy ".")[2] else payload.assetVersion
+	}
+	case endpoint at .endpoint -> endpoint -- ["id"]
+}) -- ["id"]]]]></http:body>
+						<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader,
+	"Content-Type": "application/json"
+}]]]></http:headers>
+			<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.toBGId,
+	"environmentId": vars.toEnvId
+}]]]></http:uri-params>
+
+</http:request>
+							<set-variable value="#[payload.id]" doc:name="Set Target API Instance ID" doc:id="da37227d-ae9c-47b8-ab14-62eb61f5d92d" variableName="toApiId" />
+							<scatter-gather doc:name="Scatter-Gather" doc:id="9f5a816b-7b86-4c43-acdc-72c7d354aa2d">
+						<route>
+							<http:request method="GET" doc:name="Get Source API Manager Instance Tier Details" doc:id="489d3a3e-b83b-465b-b02f-d990c60c8f54" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.apimanager.apis}/{apiId}/tiers">
+						<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+			<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.fromBGId,
+	"environmentId": vars.fromEnvId,
+	"apiId": vars.fromApiId
+}]]]></http:uri-params>
+		
+
+</http:request>
+							<foreach doc:name="For Each" doc:id="add2dd30-edb9-4f35-97cf-027b4e8f494e" collection="#[payload.tiers]">
+								<http:request method="POST" doc:name="Create Target API Manager Instance Tier" doc:id="b73abbef-2727-4ab3-bb8d-d46db577ed42" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.apimanager.apis}/{apiId}/tiers">
+						<http:body><![CDATA[#[%dw 2.0
+output application/json
+---
+{
+	"name": payload.name,
+	"description": payload.description,
+	"limits": payload.limits,
+	"status": payload.status,
+	"autoApprove": payload.autoApprove
+}]]]></http:body>
+									<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader,
+	"Content-Type": "application/json"
+}]]]></http:headers>
+			<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.toBGId,
+	"environmentId": vars.toEnvId,
+	"apiId": vars.toApiId
+}]]]></http:uri-params>
+		
+
+</http:request>							
+							
+</foreach>
+						</route>
+						<route>
+							<http:request method="GET" doc:name="Get Source API Manager Instance Policy Details" doc:id="5547b203-e311-4e46-be45-61cb2a070156" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.apimanager.apis}/{apiId}/policies">
+						<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+			<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.fromBGId,
+	"environmentId": vars.fromEnvId,
+	"apiId": vars.fromApiId
+}]]]></http:uri-params>
+								<http:query-params><![CDATA[#[output application/java
+---
+{
+	"fullInfo" : false
+}]]]></http:query-params>
+		
+
+
+</http:request>
+							<foreach doc:name="For Each" doc:id="7e3b574a-2fcc-4c9b-af04-d410605e247d" collection="#[payload]">
+								<http:request method="POST" doc:name="Create Target API Manager Instance Policy" doc:id="b3a73ade-e481-40bb-9d5c-cb9abb16052f" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.apimanager.apis}/{apiId}/policies">
+									<http:body><![CDATA[#[%dw 2.0
+output application/json
+---
+{
+	"configurationData": payload.configurationData update {
+							case .textKey! -> payload.configurationData.textKey default "textKey"
+						},
+	"order": payload.order,
+	"apiId": vars.toApiId,
+	"groupId": payload.groupId,
+	"assetId": payload.assetId,
+	"assetVersion": payload.assetVersion,
+	"disabled": payload.disabled
+}]]]></http:body>
+									<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader,
+	"Content-Type": "application/json"
+}]]]></http:headers>
+			<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.toBGId,
+	"environmentId": vars.toEnvId,
+	"apiId": vars.toApiId
+}]]]></http:uri-params>
+		
+
+
+</http:request>														
+							
+</foreach>
+						</route>
+					</scatter-gather>
+							<http:request method="GET" doc:name="Get Source API Manager Instance Contract Details" doc:id="e4d3498d-add5-4535-838d-d777db0f47ca" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.apimanager.apis}/{apiId}/contracts">
+						<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+			<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.fromBGId,
+	"environmentId": vars.fromEnvId,
+	"apiId": vars.fromApiId
+}]]]></http:uri-params>
+		
+
+</http:request>
+							<http:request method="GET" doc:name="Get Target API Manager Instance Tier Details" doc:id="ef643d37-170a-4862-985c-56bf2ac0e6ee" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.apimanager.apis}/{apiId}/tiers" target="targetTierDetails">
+						<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+			<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.toBGId,
+	"environmentId": vars.toEnvId,
+	"apiId": vars.toApiId
+}]]]></http:uri-params>
+		
+
+</http:request>
+							<foreach doc:name="For Each" doc:id="9db22214-08df-49ea-bcbd-381cb76b1fb5" collection="#[payload.contracts]">
+						<set-variable value="#[payload.status]" doc:name="Set Source Contract Status" doc:id="a6627360-bcd8-4fc9-bc90-6c8a4a825312" variableName="contractStatus" />
+						<http:request method="POST" doc:name="Create Target API Manager Instance Contract" doc:id="8bf26464-5c73-4bb6-8585-7172bc062f50" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.apimanager.apis}/{apiId}/contracts">
+									<http:body><![CDATA[#[%dw 2.0
+output application/json
+---
+{
+    "status": payload.status,
+    "applicationId": payload.applicationId,
+    ("requestedTierId": (vars.targetTierDetails.tiers filter 
+    						($.name == payload.requestedTier.name))[0].id
+    					default
+    					(vars.targetTierDetails.tiers filter 
+    						($.name == payload.tier.name))[0].id)
+    					if (vars.targetTierDetails.total > 0),
+    "terms": payload.terms,
+    "partyId": payload.partyId,
+    "partyName": payload.partyName,
+    "apiId": vars.toApiId,
+}]]]></http:body>
+									<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader,
+	"Content-Type": "application/json"
+}]]]></http:headers>
+			<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.toBGId,
+	"environmentId": vars.toEnvId,
+	"apiId": vars.toApiId
+}]]]></http:uri-params>
+		
+
+
+
+</http:request>
+						<choice doc:name="Choice" doc:id="376f1a43-8603-402d-b212-ba1577745147">
+							<when expression="#[vars.contractStatus != payload.status]">
+								<choice doc:name="Choice" doc:id="8521a569-4db7-4243-ab8e-65c609623cac">
+									<when expression='#[vars.contractStatus == "REVOKED" and ((payload.requestedTier.autoApprove default payload.tier.autoApprove) == false)]'>
+										<http:request method="PATCH" doc:name="Update Target API Manager Instance Manual Contract to Approved" doc:id="8959e43d-d8a0-4509-ab5c-f610ef17341d" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.apimanager.apis}/{apiId}/contracts/{contractId}">
+									<http:body><![CDATA[#[%dw 2.0
+output application/json
+---
+{
+    "status": "APPROVED"
+}]]]></http:body>
+									<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader,
+	"Content-Type": "application/json"
+}]]]></http:headers>
+			<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.toBGId,
+	"environmentId": vars.toEnvId,
+	"apiId": vars.toApiId,
+	"contractId": payload.id
+}]]]></http:uri-params>
+		
+
+
+</http:request>							
+									
+</when>
+								</choice>
+								<http:request method="PATCH" doc:name="Update Target API Manager Instance Contract Status" doc:id="7eda6aa9-6cc8-4e6d-81e8-801308b3e066" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.apimanager.apis}/{apiId}/contracts/{contractId}">
+									<http:body><![CDATA[#[%dw 2.0
+output application/json
+---
+{
+    "status": vars.contractStatus
+}]]]></http:body>
+									<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader,
+	"Content-Type": "application/json"
+}]]]></http:headers>
+			<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.toBGId,
+	"environmentId": vars.toEnvId,
+	"apiId": vars.toApiId,
+	"contractId": payload.id
+}]]]></http:uri-params>
+
+</http:request>
+							
+</when>
+						</choice>
+								<http:request method="PATCH" doc:name="Deprecate Source API Manager Instance" doc:id="7b78984f-a4fd-42a5-957c-2c4d2a33873c" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.apimanager.apis}/{apiId}">
+						<http:body><![CDATA[#[output application/json
+---
+{
+	"deprecated": true
+}]]]></http:body>
+						<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+			<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.fromBGId,
+	"environmentId": vars.fromEnvId,
+	"apiId": vars.fromApiId
+}]]]></http:uri-params>
+		
+
+</http:request>																			
+					
+</foreach>
+				</foreach>
+				<logger level="INFO" doc:name="Logger" doc:id="312ffd17-c7ae-4696-9b8d-df7bd835f4c4" message='#[payload.assets[0].apis map ("API Instance - " ++ $.id ++ ", Deprecated - " ++ $.deprecated)]'/>
+			
+</when>
+			<otherwise >
+				<logger level="INFO" doc:name="Logger" doc:id="1b86599d-b1e8-42da-8b75-9a53952789be" message="No unique API Manager Asset found to migrate"/>
+			</otherwise>
+		</choice>
+	</sub-flow>
+	<sub-flow name="post-assets-migrate-rollback-or-commit-apimanager-sub-flow" doc:id="00c6034e-c4f0-418c-ad48-4fffb59e1c48" >
+		<logger level="INFO" doc:name="Logger" doc:id="4f694585-f830-4ba0-a377-5a400fcedf7c" message='#[output application/java&#10;---&#10;"API Manager Asset Migration " ++ vars.confirmationType ++ " for " ++ payload.environmentSpecificAssets.apiManagerAssetName]'/>
+		<set-variable value='#[payload.environmentSpecificAssets.apiManagerAssetName]' doc:name="Set API Manager Asset Name" doc:id="fb2a5b80-7e52-40d6-9b24-5912412f78fe" variableName="apiMgrAssetName" />
+		<scatter-gather doc:name="Scatter-Gather" doc:id="8cad8d48-a202-40d4-ac72-5b7e894d3713" >
+			<route >
+				<http:request method="GET" doc:name="Get Source API Manager Instances" doc:id="f8f9e9a4-c464-411c-a2e0-a3cf3851f511" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.apimanager.apis}" target="apiMgrSourceAssetInfo">
+					<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+					<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.fromBGId,
+	"environmentId": vars.fromEnvId
+}]]]></http:uri-params>
+					<http:query-params><![CDATA[#[output application/java
+---
+{
+	"assetId": vars.apiMgrAssetName
+}]]]></http:query-params>
+				</http:request>
+			
+</route>
+			<route >
+				<http:request method="GET" doc:name="Get Target API Manager Instances" doc:id="e0e9b60d-4107-417f-b647-f5e49cee26c3" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.apimanager.apis}" target="apiMgrTargetAssetInfo" >
+					<http:headers ><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+					<http:uri-params ><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.toBGId,
+	"environmentId": vars.toEnvId
+}]]]></http:uri-params>
+					<http:query-params ><![CDATA[#[output application/java
+---
+{
+	"assetId": vars.apiMgrAssetName
+}]]]></http:query-params>
+				</http:request>
+			
+</route>
+		</scatter-gather>
+		<choice doc:name="Choice" doc:id="88476c03-1dcd-485d-97e5-fff0165768fe">
+			<when expression="#[vars.apiMgrTargetAssetInfo.total == 1]">
+				<choice doc:name="Choice" doc:id="07784f2a-d9c9-46b1-be92-6e3c120120ff">
+					<when expression="#[vars.apiMgrSourceAssetInfo.total == 1]">
+						<choice doc:name="Choice" doc:id="e67f8f95-b03c-4b8c-a156-a6db49375b38">
+							<when expression="#[vars.apiMgrSourceAssetInfo.assets[0].totalApis == vars.apiMgrTargetAssetInfo.assets[0].totalApis]">
+								<choice doc:name="Choice" doc:id="c8f01d7e-4711-437e-a467-4e5debd2cce0">
+							<when expression='#[vars.confirmationType == "commit"]'>
+								<set-variable value="#[vars.fromBGId]" doc:name="Set Delete BG Id" doc:id="36e9e7bc-6ab7-4908-918d-ba57c36e4057" variableName="deleteBGId" />
+								<set-variable value="#[vars.fromEnvId]" doc:name="Set Delete Env Id" doc:id="2517014a-7014-471c-a4fc-3856d8e889e0" variableName="deleteEnvId" />
+								<set-variable value="#[vars.apiMgrSourceAssetInfo]" doc:name="Set Delete Asset Info" doc:id="1119e5f7-093d-4d6a-802b-eaaceac16c8f" variableName="deleteAssetInfo" />
+							
+</when>
+							<otherwise>
+								<set-variable value="#[vars.toBGId]" doc:name="Set Delete BG Id" doc:id="6ec9ea65-2863-4fea-8b3d-8e64e47b2ed2" variableName="deleteBGId" />
+								<set-variable value="#[vars.toEnvId]" doc:name="Set Delete Env Id" doc:id="12b8f3ae-8d13-46d3-9b64-3172ea8ab157" variableName="deleteEnvId" />
+								<set-variable value="#[vars.apiMgrTargetAssetInfo]" doc:name="Set Delete Asset Info" doc:id="b728aff6-70a2-4ca5-9dcd-088acd0ced51" variableName="deleteAssetInfo" />
+								<parallel-foreach doc:name="Parallel For Each" doc:id="a5dadc28-659c-400f-9bb4-0b4abe4e770a" collection="#[vars.apiMgrSourceAssetInfo.assets[0].apis filter $.deprecated == true]">
+									<http:request method="PATCH" doc:name="Undeprecate Source API Manager Instance" doc:id="b7e9579e-9dc2-4b0b-9ce9-7f6a34b7ceee" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.apimanager.apis}/{apiId}">
+										<http:body><![CDATA[#[output application/json
+---
+{
+	"deprecated": false
+}]]]></http:body>
+										<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+										<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.fromBGId,
+	"environmentId": vars.fromEnvId,
+	"apiId": payload.id
+}]]]></http:uri-params>
+									</http:request>
+								</parallel-foreach>
+							
+</otherwise>
+						</choice>
+								<parallel-foreach doc:name="Parallel For Each" doc:id="efadf8c6-2fdf-40d5-b85b-36918b844d72" collection="#[vars.deleteAssetInfo.assets[0].apis]" >
+									<set-variable value="#[payload.id]" doc:name="Set Delete API Instance ID" doc:id="b3851011-044d-4b15-b279-da69bb8adbe9" variableName="deleteApiId"/>
+									<http:request method="GET" doc:name="Get API Manager Instance Contract Details" doc:id="f77768db-298e-493f-a973-d691e3eed767" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.apimanager.apis}/{apiId}/contracts" target="apiMgrContractsResponse">
+										<http:headers ><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+										<http:uri-params ><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.deleteBGId,
+	"environmentId": vars.deleteEnvId,
+	"apiId": vars.deleteApiId
+}]]]></http:uri-params>
+									</http:request>
+									<parallel-foreach doc:name="Parallel For Each" doc:id="07af5473-9c74-4fff-878a-2ec845ec5913" collection='#[vars.apiMgrContractsResponse.contracts]' target="apiMgrContractsDeleteResponse">
+										<choice doc:name="Choice" doc:id="3daa7660-31cd-4f31-963b-05ee8279dcb2" >
+											<when expression='#[payload.status == "APPROVED"]'>
+												<http:request method="PATCH" doc:name="Update API Manager Instance Contract to Revoked" doc:id="303129bf-d0af-4ce6-b3fc-ef13d9e4ac10" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.apimanager.apis}/{apiId}/contracts/{contractId}" target="apiMgrContractRevokedResponse">
+											<http:body><![CDATA[#[%dw 2.0
+output application/json
+---
+{
+    "status": "REVOKED"
+}]]]></http:body>
+											<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader,
+	"Content-Type": "application/json"
+}]]]></http:headers>
+											<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.deleteBGId,
+	"environmentId": vars.deleteEnvId,
+	"apiId": vars.deleteApiId,
+	"contractId": payload.id
+}]]]></http:uri-params>
+										</http:request>
+											</when>
+										</choice>
+										<http:request method="DELETE" doc:name="Delete API Manager Instance Contract" doc:id="0f868769-1633-4fa9-acc4-4cdd56092e05" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.apimanager.apis}/{apiId}/contracts/{contractId}">
+													<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+													<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.deleteBGId,
+	"environmentId": vars.deleteEnvId,
+	"apiId": vars.deleteApiId,
+	"contractId": payload.id
+}]]]></http:uri-params>
+												</http:request>
+									</parallel-foreach>
+									<http:request method="DELETE" doc:name="Delete API Manager Instance" doc:id="c1736acb-f992-4d57-8bff-c8e58456eba9" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.apimanager.apis}/{apiId}">
+										<http:headers ><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+										<http:uri-params ><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.deleteBGId,
+	"environmentId": vars.deleteEnvId,
+	"apiId": vars.deleteApiId
+}]]]></http:uri-params>
+									</http:request>
+								</parallel-foreach>
+								<logger level="INFO" doc:name="Logger" doc:id="74f0e397-f319-4d21-ab62-e1da016547da" message='#[output application/java&#10;---&#10;"API Asset Id - " ++ vars.deleteAssetInfo.assets[0].assetId ++ " deleted from Business Group Id - " ++ vars.deleteBGId]'/>
+							</when>
+							<otherwise >
+								<logger level="INFO" doc:name="Logger" doc:id="980b217b-23c3-450e-8b28-23652b7e9a4c" message='#["Number of Source &amp; Target API Manager instances MUST match to perform a " ++ vars.confirmationType]'/>
+							</otherwise>
+						</choice>
+					
+</when>
+					<otherwise>
+						<logger level="INFO" doc:name="Logger" doc:id="63433cf7-2552-4bdf-ae99-b03fc7cb05fe" message='#["No unique Source API Manager Assets found to " ++ vars.confirmationType]'/>
+					</otherwise>
+				</choice>
+			</when>
+			<otherwise>
+				<logger level="INFO" doc:name="Logger" doc:id="86a64835-39e6-43a4-97a0-cb591a96298a" message='#["No unique Target API Manager Assets found to " ++ vars.confirmationType]'/>
+			</otherwise>
+		</choice>
+	</sub-flow>	
+</mule>

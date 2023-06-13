@@ -1,0 +1,447 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd 
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+	<sub-flow name="post-assets-migrate-exchange-transform-and-create-asset-sub-flow" doc:id="efc564fb-68ff-4365-b329-ab406507ecd4" >
+		<ee:transform doc:name="Get RAML Information" doc:id="c3781fd6-7bc8-466e-a040-878f8b17ef96" >
+			<ee:message >
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="ramlInfo" ><![CDATA[%dw 2.0
+output application/java
+---
+(payload.files filter $.classifier == 'raml')[0]]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<http:request method="GET" doc:name="Get RAML Zip" doc:id="5f2d7d9a-7ed8-4141-92b5-fdcaa8d7657e" target="ramlZip" url="#[vars.ramlInfo.externalLink]">
+					
+		</http:request>
+	
+		<ee:transform doc:name="Create Asset Publish Request" doc:id="215e5d74-281d-4de3-bf8f-3d802378ae5c">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+input payload application/json
+output multipart/form-data boundary="--------------------------ab12cd"
+---
+{
+	parts: {
+		name: {
+			headers: {
+				"Content-Type": "text/plain"
+			},
+			content: payload.name
+		},
+		"type": {
+			headers: {
+				"Content-Type": "text/plain"
+			},
+			content: payload."type"
+		},
+		description: {
+			headers: {
+				"Content-Type": "text/plain"
+			},
+			content: payload.description
+		},
+		contactName: {
+			headers: {
+				"Content-Type": "text/plain"
+			},
+			content: payload.contactName
+		},
+		contactEmail: {
+			headers: {
+				"Content-Type": "text/plain"
+			},
+			content: payload.contactEmail
+		},
+		tags: {
+			headers: {
+				"Content-Type": "text/plain"
+			},
+			content: payload.labels joinBy ","
+		},
+		categories: {
+			headers: {
+				"Content-Type": "text/plain"
+			},
+			content: if (sizeOf(payload.categories) > 0) write(payload.categories map ({
+				"key": $.key,
+				"value": $.value joinBy ","				
+			}), 'application/json') else ""
+		},
+		"properties.apiVersion": {
+			headers: {
+				"Content-Type": "text/plain"
+			},
+			content: (payload.attributes filter contains($.key,'api-version'))[0]."value"
+		},
+		"properties.mainFile": {
+			headers: {
+				"Content-Type": "text/plain"
+			},
+			content: vars.ramlInfo.mainFile
+		},
+		("dependencies": {
+			headers: {
+				"Content-Type": "text/plain"
+			},
+			content: payload.dependencies map (
+				$.groupId ++ ":" ++ $.assetId ++ ":" ++ $.version
+			) joinBy ","
+		}) if (sizeOf(payload.dependencies) > 0),
+		"files.raml.zip": {
+			headers: {
+		        "Content-Disposition": {
+		          "name": "files.raml.zip",
+		          "filename": "raml.zip"
+		        },				
+				"Content-Type": "application/octet-stream"
+			},
+			content: vars.ramlZip
+		}
+	}	
+}]]></ee:set-payload>
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="exAssetVersion" ><![CDATA[%dw 2.0
+output application/java
+---
+payload.version]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+<!-- 		<async doc:name="Async" doc:id="ea632609-b97b-4644-b1d0-2c9433a3871e" > -->
+			<set-variable value='#[output application/java
+&#10;---
+&#10;if (vars.assetVersionOverride != null) vars.assetVersionOverride ++ "." ++ (vars.exAssetVersion splitBy ".")[2] else vars.exAssetVersion]' doc:name="Set Target Exchange Asset Version" doc:id="0a6b3ef0-9d7e-4181-a251-f2b8b6f7f1fb" variableName="exAssetVersionTarget"/>
+		<http:request method="POST" doc:name="Publish Target Exchange Asset" doc:id="5395a216-6e54-4a43-8096-7b2831686bbe" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.exchange.publish}" responseTimeout="${anypoint.platform.api.timeout}">
+							<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader,
+	"x-sync-publication": true
+}]]]></http:headers>
+					<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.toBGId,
+	"groupId": vars.toBGId,
+	"assetId": vars.exAssetName,
+	"version": vars.exAssetVersionTarget
+}]]]></http:uri-params>
+				
+		
+</http:request>
+			<choice doc:name="Choice" doc:id="6e12f9cd-2af4-4a64-8fe5-5aa0a2d17853" >
+				<when expression="#[vars.exAssetVersion == vars.exVersionLatest]">
+					<http:request method="GET" doc:name="Get Source Exchange Asset Pages" doc:id="de0b2cbd-4abc-4f40-a559-10b5a7eb175b" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.exchange.portal}/draft/pages" responseTimeout="${anypoint.platform.api.timeout}">
+							<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+					<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"groupId": vars.fromBGId,
+	"assetId": vars.exAssetName,
+	"version": vars.exVersionLatest
+}]]]></http:uri-params>
+				
+		
+</http:request>
+					<parallel-foreach doc:name="Parallel For Each" doc:id="d600535b-e944-4a4c-8444-e1d8cd8a0e6b" collection="#[payload]">
+					<choice doc:name="Choice" doc:id="04c6acdb-639c-4e3a-a392-952174d859b2">
+						<when expression='#[payload.name != "home"]'>
+							<http:request method="POST" doc:name="Create Target Exchange Asset Draft Page" doc:id="2f4c073a-53ad-49ed-b072-efb3294d2dfd" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.exchange.portal}/draft/pages" responseTimeout="${anypoint.platform.api.timeout}" target="createPageResponse">
+							<http:body><![CDATA[#[{
+	"pagePath": payload.path
+}]]]></http:body>
+						<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+					<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"groupId": vars.toBGId,
+	"assetId": vars.exAssetName,
+	"version": vars.exAssetVersionTarget
+}]]]></http:uri-params>
+				
+		
+</http:request>
+						</when>
+					</choice>			
+				<http:request method="GET" doc:name="Get Source Exchange Asset Page Content" doc:id="c5380093-adeb-479d-b44f-b88444ee34f0" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.exchange.portal}/draft/pages/{pagePath}" responseTimeout="${anypoint.platform.api.timeout}" target="pageContent">
+						<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+					<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"groupId": vars.fromBGId,
+	"assetId": vars.exAssetName,
+	"version": vars.exVersionLatest,
+	"pagePath": payload.path
+}]]]></http:uri-params>
+				
+		
+</http:request>			
+				<http:request method="PUT" doc:name="Update Target Exchange Asset Page Content" doc:id="6cac2d78-f88b-401f-982e-ec3053d6b073" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.exchange.portal}/draft/pages/{pagePath}" responseTimeout="${anypoint.platform.api.timeout}">
+							<http:body><![CDATA[#[vars.pageContent]]]></http:body>
+						<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader,
+	"Content-Type": "text/markdown"
+}]]]></http:headers>
+					<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"groupId": vars.toBGId,
+	"assetId": vars.exAssetName,
+	"version": vars.exAssetVersionTarget,
+	"pagePath": payload.path
+}]]]></http:uri-params>
+				
+		
+</http:request>			
+			</parallel-foreach>
+					<http:request method="PATCH" doc:name="Publish Target Exchange Asset Pages" doc:id="3d0a126f-5168-4dfb-90b0-a3c4bcc7c477" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.exchange.portal}" responseTimeout="${anypoint.platform.api.timeout}">
+						<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+					<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"groupId": vars.toBGId,
+	"assetId": vars.exAssetName,
+	"version": vars.exAssetVersionTarget
+}]]]></http:uri-params>
+				
+		
+</http:request>
+				</when>
+			</choice>
+			<http:request method="PUT" doc:name="Deprecate Source Exchange Asset" doc:id="d06315b6-9a09-40b7-966c-77cf4706615d" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.exchange.status}">
+							<http:body ><![CDATA[{
+	"status": "deprecated"
+}]]></http:body>
+				<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization": vars.authorizationHeader,
+	"Content-Type": "application/json" 
+}]]]></http:headers>
+					<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"groupId": vars.fromBGId,
+	"assetId": vars.exAssetName,
+	"version": vars.exAssetVersion
+}]]]></http:uri-params>
+				
+		
+
+</http:request>
+		
+<!-- </async> -->		
+	</sub-flow>
+	<sub-flow name="post-assets-migrate-exchange-sub-flow" doc:id="2543c4d6-db8d-4e4e-bdb4-429295d98ff3">
+		<logger level="INFO" doc:name="Logger" doc:id="ea033112-6e92-4633-b2e0-7eed89138e65" message='#["Exchange Asset Migration for " ++ payload.exchangeAssetName]'/>
+		<set-variable value="#[payload.exchangeAssetName]" doc:name="Set Exchange Asset Name" doc:id="cdaf3c54-a44a-451b-8e96-ea6c52ec1f5e" variableName="exAssetName"/>
+		<set-variable value="#[payload.assetMinorVersionOverride]" doc:name="Set Asset Version Override" doc:id="a4e4980e-d0fd-4cde-aa0a-678de01553ee" variableName="assetVersionOverride"/>
+		<http:request method="GET" doc:name="Get Source Exchange Asset (Latest)" doc:id="0cfffd1a-2605-47ac-a748-ff8271a84f53" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.exchange.asset-latest}">
+					<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+			<http:uri-params ><![CDATA[#[output application/java
+---
+{
+	"groupId": vars.fromBGId,
+	"assetId": vars.exAssetName
+}]]]></http:uri-params>
+			<http:response-validator >
+				<http:success-status-code-validator values="200..499" />
+			</http:response-validator>
+		
+</http:request>
+		<choice doc:name="Choice" doc:id="a58884ed-e1ab-4d54-b338-47bd3a4964a8" >
+			<when expression="#[payload.name != null]">
+				<choice doc:name="Choice" doc:id="e16a53bd-918f-4fdf-85e3-17795a21ef8c">
+			<when expression='#[payload.status == "published"]'>
+				<set-variable value="#[payload.version]" doc:name="Set Exchange Asset Latest Version" doc:id="cfde77b7-b795-4491-a077-d6f9a95903cc" variableName="exVersionLatest" />
+				<flow-ref doc:name="Transform and Create Asset (Latest)" doc:id="c5d2aa0c-2f8f-4b0c-a5aa-6d340c20b5ed" name="post-assets-migrate-exchange-transform-and-create-asset-sub-flow" target="exchangeAssetLatest" />
+				<parallel-foreach doc:name="Parallel For Each" doc:id="d7de4933-7ba8-466f-b16d-164a94693932" collection="#[payload.versions]" target="exchangeAssetOtherVersions">
+			<http:request method="GET" doc:name="Get Source Exchange Asset" doc:id="1254e113-fbde-4f78-ad62-bff24353033f" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.exchange.asset}">
+					<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+			<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"groupId": vars.fromBGId,
+	"assetId": vars.exAssetName,
+	"version": payload
+}]]]></http:uri-params>
+		
+			</http:request>
+			<flow-ref doc:name="Transform and Create Asset" doc:id="749ef1b7-2450-460f-8259-c584c1383132" name="post-assets-migrate-exchange-transform-and-create-asset-sub-flow" />
+		
+		
+</parallel-foreach>
+						<logger level="INFO" doc:name="Logger" doc:id="1e91a1a5-4a3e-45b0-85dc-e5a9f7c56f88" message="#[vars.exchangeAssetLatest]"/>
+			</when>
+			<otherwise>
+						<logger level="INFO" doc:name="Logger" doc:id="002bd5f4-e11f-4d7a-ac9d-ec5617fac8a0" message="Exchange Asset in deprecated status cannot be migrated"/>
+			</otherwise>
+		</choice>
+			</when>
+			<otherwise >
+				<logger level="INFO" doc:name="Logger" doc:id="c20e386f-556a-4e23-b615-6aa4b918a0ad" message="No Exchange Asset found to migrate"/>
+			</otherwise>
+		</choice>
+	</sub-flow>
+	
+	<sub-flow name="post-assets-migrate-rollback-or-commit-exchange-sub-flow" doc:id="36692d82-166d-47ed-9b3b-bc7e9bf93aaf" >
+		<logger level="INFO" doc:name="Logger" doc:id="1187b5a2-41be-4a20-93d5-83fc82aaf9ae" message='#[output application/java&#10;---&#10;"Exchange Asset Migration " ++ vars.confirmationType ++ " for " ++ payload.exchangeAssetName]'/>
+		<set-variable value='#[payload.exchangeAssetName]' doc:name="Set Exchange Asset Name" doc:id="1bcdc09f-66a7-460f-9468-3c12a5025249" variableName="exAssetName" />
+		<scatter-gather doc:name="Scatter-Gather" doc:id="4dc6a705-a0d2-4259-a954-20c8a42059a0" >
+			<route >
+				<http:request method="GET" doc:name="Get Source Exchange Asset (Latest)" doc:id="5522b125-b981-438d-9f86-26ecb6da1deb" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.exchange.asset-latest}" target="exSourceAssetInfo">
+					<http:headers ><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+					<http:uri-params ><![CDATA[#[output application/java
+---
+{
+	"groupId": vars.fromBGId,
+	"assetId": vars.exAssetName
+}]]]></http:uri-params>
+					<http:response-validator >
+						<http:success-status-code-validator values="200..499" />
+					</http:response-validator>
+				</http:request>
+			
+
+</route>
+			<route >
+				<http:request method="GET" doc:name="Get Target Exchange Asset (Latest)" doc:id="d5a6d1cf-132f-404e-ab73-4955bf8ab615" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.exchange.asset-latest}" target="exTargetAssetInfo">
+					<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+					<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"groupId": vars.toBGId,
+	"assetId": vars.exAssetName
+}]]]></http:uri-params>
+					<http:response-validator>
+						<http:success-status-code-validator values="200..499" />
+					</http:response-validator>
+				</http:request>
+			
+
+</route>
+		</scatter-gather>
+		<choice doc:name="Choice" doc:id="c24928a6-4bc1-42b7-b9e1-1d778c7e1a5e">
+			<when expression="#[vars.exTargetAssetInfo.name != null]">
+				<choice doc:name="Choice" doc:id="c156ae76-81bb-41ac-8bbd-f34e0b4e48e9">
+					<when expression="#[vars.exSourceAssetInfo.name != null]">
+						<choice doc:name="Choice" doc:id="66c82a62-d9b1-4052-bbc9-43fc5bbcef3d">
+							<when expression='#[sizeOf(vars.exTargetAssetInfo.versions) == sizeOf(vars.exSourceAssetInfo.versions)]'>
+								<choice doc:name="Choice" doc:id="9e267c3a-fbbe-4bb7-bcc6-c54e1275334f">
+							<when expression='#[vars.confirmationType == "commit"]'>
+								<set-variable value='#[vars.fromBGId]' doc:name="Set Delete BG Id" doc:id="f6ee9cb0-c4f9-4a14-8a31-961a3849d67f" variableName="deleteBGId" />
+								<set-variable value="#[vars.exSourceAssetInfo]" doc:name="Set Delete Asset Info" doc:id="33543a08-d4e6-4086-bef3-4237df9b61dd" variableName="deleteAssetInfo" />
+							
+</when>
+							<otherwise>
+								<set-variable value="#[vars.toBGId]" doc:name="Set Delete BG Id" doc:id="5dd01ded-e29f-43ea-a474-6f91464d05d7" variableName="deleteBGId" />
+								<set-variable value="#[vars.exTargetAssetInfo]" doc:name="Set Delete Asset Info" doc:id="187397a8-c14e-4e1e-95de-f447e7425e96" variableName="deleteAssetInfo" />
+								<parallel-foreach doc:name="Parallel For Each" doc:id="c58b39d1-e4ca-46d7-a8f1-a20cc5b3f271" collection='#[(vars.exSourceAssetInfo.version splitBy ",") ++ vars.exSourceAssetInfo.versions]'>
+											<http:request method="PUT" doc:name="Undeprecate Source Exchange Asset" doc:id="34e7a5da-07d4-41d0-8b5a-981f55a85b22" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.exchange.status}" >
+												<http:body ><![CDATA[{
+	"status": "published"
+}]]></http:body>
+												<http:headers ><![CDATA[#[output application/java
+---
+{
+	"Authorization": vars.authorizationHeader,
+	"Content-Type": "application/json" 
+}]]]></http:headers>
+												<http:uri-params ><![CDATA[#[output application/java
+---
+{
+	"groupId": vars.fromBGId,
+	"assetId": vars.exAssetName,
+	"version": payload
+}]]]></http:uri-params>
+											</http:request>
+								
+</parallel-foreach>
+							
+</otherwise>
+						</choice>
+								<set-variable value='#[%dw 2.0
+&#10;import * from dw::core::Periods
+&#10;output application/java
+&#10;---
+&#10;if (vars.deleteAssetInfo.createdAt &gt; (now() - days(7))) "hard-delete"
+&#10;else "soft-delete"]' doc:name="Set Delete Type" doc:id="b315aceb-8208-48a4-8ace-69e252a904b5" variableName="exDeleteType" />
+								<parallel-foreach doc:name="Parallel For Each" doc:id="c1e620ce-238a-476b-a93e-f1cad1c5d5cf" collection='#[(vars.deleteAssetInfo.version splitBy ",") ++ vars.deleteAssetInfo.versions]'>
+									<http:request method="DELETE" doc:name="Delete Target Exchange Asset" doc:id="406acd13-d88a-41d8-ad5e-175c369f1e1f" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.exchange.asset-delete}">
+													<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader,
+	"x-delete-type": vars.exDeleteType
+}]]]></http:headers>
+													<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"groupId": vars.deleteBGId,
+	"assetId": vars.exAssetName,
+	"version": payload
+}]]]></http:uri-params>
+												</http:request>
+								</parallel-foreach>
+								<logger level="INFO" doc:name="Logger" doc:id="3e659c6c-2255-4f4c-b200-7a5a111822d5" message='#[output application/java&#10;---&#10;"Exchange Asset - " ++ vars.exAssetName ++ " deleted from Business Group Id - " ++ vars.deleteBGId]'/>
+							
+</when>
+							<otherwise >
+								<logger level="INFO" doc:name="Logger" doc:id="7a58750c-7e85-45a8-ae56-659a44b1910f" message='#["Number of Source &amp; Target Exchange Asset versions MUST match to perform a " ++ vars.confirmationType]'/>
+							</otherwise>
+						</choice>
+					
+</when>
+					<otherwise>
+						<logger level="INFO" doc:name="Logger" doc:id="935bc83b-d5fd-4401-960a-2c54021a34a6" message='#["No Source Exchange Assets found to " ++ vars.confirmationType]'/>
+					</otherwise>
+				</choice>
+			</when>
+			<otherwise>
+				<logger level="INFO" doc:name="Logger" doc:id="0d986f8e-5626-4f02-a3a9-31bbee21de57" message='#["No Target Exchange Assets found to " ++ vars.confirmationType]'/>
+			</otherwise>
+		</choice>
+	</sub-flow>	
+</mule>

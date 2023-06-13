@@ -1,0 +1,402 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd 
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+	<sub-flow name="post-assets-copy-anypointmqdestinations-sub-flow" doc:id="f647d145-7642-4e2f-8f02-f079987e407f">
+		<logger level="INFO" doc:name="Logger" doc:id="0bcbde82-b441-4071-9b14-4993b37761f5" message='#["Anypoint MQ Destination Asset Copy started for " ++ sizeOf(payload.environmentSpecificAssets.anypointMQ.destinations) ++ " destinations in " ++ payload.environmentSpecificAssets.anypointMQ.region ++ " region"]'/>
+		<set-variable value="#[payload.environmentSpecificAssets.anypointMQ.region]" doc:name="Set AMQ Region" doc:id="0f267684-92d4-49ce-8355-e87173d82c2d" variableName="amqRegion" />
+		<set-variable value="#[payload.environmentSpecificAssets.anypointMQ.destinations]" doc:name="Set AMQ Destinations" doc:id="cf4b1bd7-8295-4b09-ad7a-320bc03a9658" variableName="amqDestinations"/>
+		<scatter-gather doc:name="Scatter-Gather" doc:id="41c82e20-067c-4243-a286-29f8d2380d20">
+			<route >
+				<http:request method="GET" doc:name="Get Source Anypoint MQ Destinations" doc:id="1aa1ef23-1ebb-427d-8836-fe51d62c7e22" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.anypointmq.destinations}" target="amqSourceDestinationList">
+					<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+					<http:uri-params ><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.fromBGId,
+	"environmentId": vars.fromEnvId,
+	"regionId": vars.amqRegion
+}]]]></http:uri-params>
+				
+</http:request>
+			</route>
+			<route >
+				<http:request method="GET" doc:name="Get Target Anypoint MQ Destinations" doc:id="212bd329-0f5d-450f-9d20-1cbd13e6cb98" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.anypointmq.destinations}" target="amqTargetDestinationList">
+					<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+					<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.toBGId,
+	"environmentId": vars.toEnvId,
+	"regionId": vars.amqRegion
+}]]]></http:uri-params>
+				</http:request>
+			</route>
+		</scatter-gather>
+		<set-variable value="#[vars.amqSourceDestinationList filter (vars.amqDestinations contains $.queueId)]" doc:name="Set Source Queue" doc:id="71f2b7f4-8495-4f3c-9e7b-dc5d57a691c7" variableName="amqSourceQueue" />
+		<parallel-foreach doc:name="Parallel For Each" doc:id="816dba39-6cfa-408b-b018-f6f8a17f472e" collection="#[vars.amqSourceQueue]">
+			<set-variable doc:name="Set Target Queue" doc:id="64a9f5d7-3711-4dcb-ab1b-ecff0f7839b3" variableName="amqTargetQueue" value="#[(vars.amqTargetDestinationList filter $.queueId == payload.queueId)[0]]" />
+			<choice doc:name="Choice" doc:id="34e550a2-5150-4cdc-a6dc-368f37b223b5">
+				<when expression="#[vars.amqTargetQueue == null]">
+					<until-successful maxRetries="${anypoint.platform.api.retry.count}" doc:name="Retry Queue Creation" doc:id="a732ee7e-5a2a-478a-840f-cf3132e35114" millisBetweenRetries="${anypoint.platform.api.retry.interval}">
+						<http:request method="PUT" doc:name="Create Target Queue" doc:id="881d51fb-545c-4f44-8f6f-4438acd10460" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.anypointmq.destinations}/queues/{queueId}">
+							<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+								<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.toBGId,
+	"environmentId": vars.toEnvId,
+	"regionId": vars.amqRegion,
+	"queueId": payload.queueId
+}]]]></http:uri-params>
+							<http:response-validator>
+								<http:success-status-code-validator values="200..599" />
+							</http:response-validator>
+				
+
+</http:request>
+						<choice doc:name="Choice" doc:id="e24f2780-fb7e-4a89-885d-324217636088">
+							<when expression="#[payload.queueId == null]">
+								<logger level="INFO" doc:name="Logger" doc:id="679f1051-dbff-479b-93e0-3457815c62ae" message="#[payload]"/>
+								<raise-error doc:name="Queue Creation Failed" doc:id="3932f271-30ff-4d73-8dd5-39a11a2cc37a" type="AP_MGMT:QUEUE_CREATION_FAILED" description="#[payload]" />
+							</when>
+						</choice>
+					</until-successful>
+					<logger level="INFO" doc:name="Logger" doc:id="67becb55-e918-4622-9de6-0a8e21548405" message='#["Copy Queue asset for " ++ payload.queueId ++ " successfully completed"]'/>
+				</when>
+			<otherwise>
+					<logger level="INFO" doc:name="Logger" doc:id="d3c127e8-0236-4c2b-9382-c672f5c92428" message='#["Copy Queue asset cannot continue. Queue " ++ payload.queueId ++ " already present in the target environment"]'/>
+				</otherwise>
+			</choice>		
+		</parallel-foreach>
+		
+		<set-variable doc:name="Set Source Exchange" doc:id="7f8d561f-167d-4e10-8ad0-af30031f41f3" variableName="amqSourceExchange" value="#[vars.amqSourceDestinationList filter (vars.amqDestinations contains $.exchangeId)]" />
+		<parallel-foreach doc:name="Parallel For Each" doc:id="164b1799-1b68-4b70-98d1-aea18992645b" collection='#[vars.amqSourceExchange]'>
+			<set-variable doc:name="Set Target Exchange" doc:id="6caa6f2b-b947-4ec7-b9a1-1582e38f0166" variableName="amqTargetExchange" value="#[(vars.amqTargetDestinationList filter $.exchangeId == payload.exchangeId)[0]]" />
+			<choice doc:name="Choice" doc:id="e0720edf-7e43-4489-a0f3-a59b3b42bad1">
+				<when expression="#[vars.amqTargetExchange == null]">
+					<http:request method="PUT" doc:name="Create Target Exchange" doc:id="4d945d77-be52-4e56-94fb-1cc2ca7cf958" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.anypointmq.destinations}/exchanges/{exchangeId}">
+					<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+								<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.toBGId,
+	"environmentId": vars.toEnvId,
+	"regionId": vars.amqRegion,
+	"exchangeId": payload.exchangeId
+}]]]></http:uri-params>
+</http:request>
+					<logger level="INFO" doc:name="Logger" doc:id="2ce10d67-6357-4785-9586-ac9be94877d2" message='#["Copy Exchange asset for " ++ payload.exchangeId ++ " successfully completed"]'/>
+				</when>
+				<otherwise>
+					<logger level="INFO" doc:name="Logger" doc:id="8c35eacc-2d74-427a-b253-a4ef50062238" message='#["Copy Exchange asset cannot continue. Exchange " ++ payload.exchangeId ++ " already present in the target environment"]'/>
+				</otherwise>
+			</choice>
+			<http:request method="GET" doc:name="Get Source Exchange Bindings" doc:id="42c071d1-1b06-495c-8bd7-d6921e66e7c6" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.anypointmq.bindings}/exchanges/{exchangeId}">
+				<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+								<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.fromBGId,
+	"environmentId": vars.fromEnvId,
+	"regionId": vars.amqRegion,
+	"exchangeId": payload.exchangeId
+}]]]></http:uri-params>
+			</http:request>
+			<parallel-foreach doc:name="Parallel For Each" doc:id="3e94c470-a29c-4fd9-b770-cc0bca78f5b9" collection="#[payload]">
+				<choice doc:name="Choice" doc:id="6efa98da-5ce2-4143-9589-d75c8ab3629f" >
+					<when expression="#[vars.amqDestinations contains payload.queueId]">
+						<http:request method="PUT" doc:name="Create Target Exchange Binding" doc:id="f05322a0-3411-4c88-a52a-ff03ce21c3fc" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.anypointmq.bindings}/exchanges/{exchangeId}/queues/{queueId}">
+							<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+								<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.toBGId,
+	"environmentId": vars.toEnvId,
+	"regionId": vars.amqRegion,
+	"queueId": payload.queueId,
+	"exchangeId": payload.exchangeId
+}]]]></http:uri-params>
+						</http:request>
+						<logger level="INFO" doc:name="Logger" doc:id="f321c18b-b56f-4c25-84a0-6aa1b56d7adf" message='#["Copy Queue Binding for " ++ payload.queueId ++ " to Exchange " ++ payload.exchangeId ++ " successfully completed"]'/>
+					</when>
+				</choice>
+			</parallel-foreach>
+		</parallel-foreach>
+		<logger level="INFO" doc:name="Logger" doc:id="229d4a1f-ca6e-4c88-bdc9-1f62612ca7fa" message='#["Anypoint MQ Destination Asset Copy completed for " ++ sizeOf(vars.amqDestinations) ++ " destinations in " ++ vars.amqRegion ++ " region"]'/>	
+	</sub-flow>
+	<sub-flow name="post-assets-purge-anypointmqdestinations-sub-flow" doc:id="2377bb07-1957-4c33-8d6a-ab6279f94b21" >
+		<logger level="INFO" doc:name="Logger" doc:id="73a7d803-a8df-4764-aeed-1b073e2a98e3" message='#["Anypoint MQ Destination Asset Purge started for " ++ sizeOf(payload.environmentSpecificAssets.anypointMQ.destinations) ++ " destinations in " ++ payload.environmentSpecificAssets.anypointMQ.region ++ " region"]'/>
+		<set-variable value="#[payload.environmentSpecificAssets.anypointMQ.region]" doc:name="Set AMQ Region" doc:id="f3729602-9b60-4937-9305-dd7cf8fadc7b" variableName="amqRegion" />
+		<set-variable value="#[payload.environmentSpecificAssets.anypointMQ.destinations]" doc:name="Set AMQ Destinations" doc:id="9663c901-a189-44c7-b272-3b683c0e3f27" variableName="amqDestinations"/>
+		<scatter-gather doc:name="Scatter-Gather" doc:id="24a7c97b-2d45-44b4-a180-1dc31f5600b4">
+			<route >
+				<http:request method="GET" doc:name="Get Source Anypoint MQ Destinations" doc:id="6577057e-a74d-4dba-9c8f-6482ef200f91" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.anypointmq.destinations}" target="amqSourceDestinationList">
+					<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+					<http:uri-params ><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.fromBGId,
+	"environmentId": vars.fromEnvId,
+	"regionId": vars.amqRegion
+}]]]></http:uri-params>
+				
+</http:request>
+			</route>
+			<route >
+				<http:request method="GET" doc:name="Get Target Anypoint MQ Destinations" doc:id="8ea91102-e2b9-4e0d-9c3b-57e657a791de" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.anypointmq.destinations}" target="amqTargetDestinationList">
+					<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+					<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.toBGId,
+	"environmentId": vars.toEnvId,
+	"regionId": vars.amqRegion
+}]]]></http:uri-params>
+				</http:request>
+			</route>
+		</scatter-gather>
+		<set-variable value="#[vars.amqTargetDestinationList filter (vars.amqDestinations contains $.queueId)]" doc:name="Set Target Queue" doc:id="a4522675-e9b3-4340-adb7-a807b2a1bda4" variableName="amqTargetQueue" />
+		<parallel-foreach doc:name="Parallel For Each" doc:id="a4006f35-1fff-43f5-ae48-c684e06bcea0" collection="#[vars.amqTargetQueue]">
+			<set-variable doc:name="Set Source Queue" doc:id="efb26424-3470-4497-9170-9ca9ee5cbd0c" variableName="amqSourceQueue" value="#[(vars.amqSourceDestinationList filter $.queueId == payload.queueId)[0]]" />
+			<choice doc:name="Choice" doc:id="28431645-1c3e-4c37-b33c-d6c8dc00b924">
+				<when expression="#[vars.amqSourceQueue != null]">
+					<until-successful maxRetries="${anypoint.platform.api.retry.count}" doc:name="Retry Queue Deletion" doc:id="e739ece5-35ef-4185-87ef-6be91a1609b8" millisBetweenRetries="${anypoint.platform.api.retry.interval}">
+					<http:request method="DELETE" doc:name="Delete Source Queue" doc:id="0953bf77-77c7-435f-bc8c-31983cddb575" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.anypointmq.destinations}/queues/{queueId}">
+					<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+								<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.fromBGId,
+	"environmentId": vars.fromEnvId,
+	"regionId": vars.amqRegion,
+	"queueId": payload.queueId
+}]]]></http:uri-params>
+							<http:response-validator >
+								<http:success-status-code-validator values="200..599" />
+							</http:response-validator>
+				
+
+</http:request>
+						<choice doc:name="Choice" doc:id="4b5f40c3-bfd4-4cc5-8b6a-6ddbdeff2ffa">
+							<when expression="#[attributes.statusCode != 204 and attributes.statusCode != 404]">
+								<logger level="INFO" doc:name="Logger" doc:id="c25372f8-c926-433a-aea7-173f4ec1ee68" message="#[payload]"/>
+								<raise-error doc:name="Queue Deletion Failed" doc:id="b42cff9f-2758-4844-a8a4-9fd2c5715144" type="AP_MGMT:QUEUE_DELETION_FAILED" description="#[payload]" />
+							</when>
+						</choice>
+					</until-successful>
+					<logger level="INFO" doc:name="Logger" doc:id="27ae27b6-45b5-49d2-ac63-0675570dad89" message='#["Purge Queue asset for " ++ vars.amqSourceQueue.queueId ++ " successfully completed"]'/>
+				</when>
+			<otherwise>
+					<logger level="INFO" doc:name="Logger" doc:id="823bfbfe-9aa6-4f3e-8e15-6b614a654e1c" message='#["Purge Queue asset cannot continue. Queue " ++ payload.queueId ++ " not present in the source environment"]'/>
+				</otherwise>
+			</choice>
+		</parallel-foreach>
+		<set-variable doc:name="Set Target Exchange" doc:id="0f8161c3-3c4e-43ad-844f-531db3729883" variableName="amqTargetExchange" value="#[vars.amqTargetDestinationList filter (vars.amqDestinations contains $.exchangeId)]" />
+		<parallel-foreach doc:name="Parallel For Each" doc:id="cfbb4d41-ec3b-4037-a74d-b2cabefd2926" collection='#[vars.amqTargetExchange]'>
+			<set-variable doc:name="Set Source Exchange" doc:id="4f7d7079-72c4-4e34-a926-7a699d7adf02" variableName="amqSourceExchange" value="#[(vars.amqSourceDestinationList filter $.exchangeId == payload.exchangeId)[0]]" />
+			<choice doc:name="Choice" doc:id="39adc401-a1c4-466e-950e-351b86c374f4">
+				<when expression="#[vars.amqSourceExchange != null]">
+					<http:request method="DELETE" doc:name="Delete Source Exchange" doc:id="06323ded-234e-46e6-807b-9758aba59426" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.anypointmq.destinations}/exchanges/{exchangeId}" target="amqExchangeDeleteResponse">
+					<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+								<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.fromBGId,
+	"environmentId": vars.fromEnvId,
+	"regionId": vars.amqRegion,
+	"exchangeId": payload.exchangeId
+}]]]></http:uri-params>
+</http:request>
+					<logger level="INFO" doc:name="Logger" doc:id="336db610-c436-4f47-87f6-a720d72bf0d6" message='#["Purge Exchange asset for " ++ payload.exchangeId ++ " successfully completed"]'/>
+				</when>
+				<otherwise>
+					<logger level="INFO" doc:name="Logger" doc:id="066e5494-c61f-4c5a-8e1e-9055fec8856c" message='#["Purge Exchange asset cannot continue. Exchange " ++ payload.exchangeId ++ " not present in the source environment"]'/>
+				</otherwise>
+			</choice>
+		</parallel-foreach>
+		<logger level="INFO" doc:name="Logger" doc:id="b150b5cc-6bbe-47e6-a6a1-cbd68a098104" message='#["Anypoint MQ Destination Asset Purge completed for " ++ sizeOf(vars.amqDestinations) ++ " destinations in " ++ vars.amqRegion ++ " region"]'/>
+	</sub-flow>
+	
+	<sub-flow name="post-assets-copy-anypointmqclients-sub-flow" doc:id="d966fb95-aeb2-45c9-8076-33fdde77a1d3">
+		<logger level="INFO" doc:name="Logger" doc:id="bdfab847-8925-4ae5-a2d0-c98c3a6e5685" message='#["Anypoint MQ Client Asset Copy started for " ++ sizeOf(payload.environmentSpecificAssets.anypointMQ.clients) ++ " clients"]'/>
+		<set-variable value="#[payload.environmentSpecificAssets.anypointMQ.clients]" doc:name="Set AMQ Clients" doc:id="d3b92121-d717-49df-b3df-f6393c80b7ec" variableName="amqClients"/>
+		<scatter-gather doc:name="Scatter-Gather" doc:id="0cff6964-0d5a-4544-84a5-de41a697dd30">
+			<route >
+				<http:request method="GET" doc:name="Get Source Anypoint MQ Clients" doc:id="ac570d67-22b4-405b-a038-f79ef81c1ec7" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.anypointmq.clients}" target="amqSourceClientList">
+					<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+					<http:uri-params ><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.fromBGId,
+	"environmentId": vars.fromEnvId
+}]]]></http:uri-params>
+				
+</http:request>
+			</route>
+			<route >
+				<http:request method="GET" doc:name="Get Target Anypoint MQ Clients" doc:id="daded3e5-835f-4558-8e1b-73d5d1009b64" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.anypointmq.clients}" target="amqTargetClientList">
+					<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+					<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.toBGId,
+	"environmentId": vars.toEnvId
+}]]]></http:uri-params>
+				</http:request>
+			</route>
+		</scatter-gather>
+		<set-variable value="#[vars.amqSourceClientList filter (vars.amqClients contains $.name)]" doc:name="Set Source Client" doc:id="fc9b9e40-31bf-4e3b-a32d-a68ca77d99bf" variableName="amqSourceClient" />
+		<parallel-foreach doc:name="Parallel For Each" doc:id="eb101d0b-ede0-4157-b5d8-9095d24847a7" collection="#[vars.amqSourceClient]">
+			<set-variable doc:name="Set Target Client" doc:id="e252e8b2-b627-4713-88b9-b2a206f58a4d" variableName="amqTargetClient" value="#[(vars.amqTargetClientList filter $.name == payload.name)[0]]" />
+			<choice doc:name="Choice" doc:id="6d312ed2-63a5-42ba-9fcf-64cc8247f940">
+				<when expression="#[vars.amqTargetClient == null]">
+					<http:request method="PUT" doc:name="Create Target Client" doc:id="33e9af33-e683-43fa-a916-d3eef27ee6a1" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.anypointmq.clients}">
+						<http:body ><![CDATA[#[{
+	"name": payload.name
+}]]]></http:body>
+						<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+								<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.toBGId,
+	"environmentId": vars.toEnvId
+}]]]></http:uri-params>
+				
+
+</http:request>
+					<logger level="INFO" doc:name="Logger" doc:id="029b526a-4a4f-44e7-b1cf-3081a51376e6" message='#["Copy Client asset for " ++ payload.name ++ " successfully completed"]'/>
+				</when>
+				<otherwise>
+					<logger level="INFO" doc:name="Logger" doc:id="542773fe-363f-43f1-8f6f-f7fe37879124" message='#["Copy Client asset cannot continue. Client " ++ payload.name ++ " already present in the target environment"]'/>
+				</otherwise>
+			</choice>		
+		</parallel-foreach>
+		<logger level="INFO" doc:name="Logger" doc:id="5442b46f-9e61-433c-95ac-98d9dd33c381" message='#["Anypoint MQ Client Asset Copy completed for " ++ sizeOf(vars.amqClients) ++ " clients"]'/>	
+	</sub-flow>
+
+	<sub-flow name="post-assets-purge-anypointmqclients-sub-flow" doc:id="7e9a359b-60ea-48e2-9148-2df10ae5a59f" >
+		<logger level="INFO" doc:name="Logger" doc:id="4352ea72-f7d4-4794-944a-d6dd9679c367" message='#["Anypoint MQ Client Asset Purge started for " ++ sizeOf(payload.environmentSpecificAssets.anypointMQ.clients) ++ " clients"]'/>
+		<set-variable value="#[payload.environmentSpecificAssets.anypointMQ.clients]" doc:name="Set AMQ Clients" doc:id="acd39024-4110-4974-85ae-21b2970cfeb9" variableName="amqClients"/>
+		<scatter-gather doc:name="Scatter-Gather" doc:id="3841b09b-d7bf-492a-9bef-574439d3970e">
+			<route >
+				<http:request method="GET" doc:name="Get Source Anypoint MQ Clients" doc:id="21dc1930-0a5a-43e7-a965-ca56530b6899" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.anypointmq.clients}" target="amqSourceClientList">
+					<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+					<http:uri-params ><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.fromBGId,
+	"environmentId": vars.fromEnvId
+}]]]></http:uri-params>
+				
+</http:request>
+			</route>
+			<route >
+				<http:request method="GET" doc:name="Get Target Anypoint MQ Clients" doc:id="bb6a98e2-5578-48bb-830d-909c34ef727f" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.anypointmq.clients}" target="amqTargetClientList">
+					<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+					<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.toBGId,
+	"environmentId": vars.toEnvId
+}]]]></http:uri-params>
+				</http:request>
+			</route>
+		</scatter-gather>
+		<set-variable value="#[vars.amqTargetClientList filter (vars.amqClients contains $.name)]" doc:name="Set Target Client" doc:id="ae788d40-1ba8-44f4-8ab3-56e6145847d3" variableName="amqTargetClient" />
+		<parallel-foreach doc:name="Parallel For Each" doc:id="7e728ad9-dc28-46ba-8e1e-c650e6a7d6bb" collection="#[vars.amqTargetClient]">
+			<set-variable doc:name="Set Source Client" doc:id="ff3205d2-3054-4d22-badf-846e456f0380" variableName="amqSourceClient" value="#[(vars.amqSourceClientList filter $.name == payload.name)[0]]" />
+			<choice doc:name="Choice" doc:id="06f42c7f-826e-460f-80c4-60a6588b0b65">
+				<when expression="#[vars.amqSourceClient != null]">
+					<http:request method="DELETE" doc:name="Delete Source Client" doc:id="fe9db736-39d4-4e2e-a03a-c2a190a72d57" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.anypointmq.clients}/{clientId}" target="amqQueueDeleteResponse">
+					<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+								<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId": vars.fromBGId,
+	"environmentId": vars.fromEnvId,
+	"clientId": vars.amqSourceClient.clientId
+}]]]></http:uri-params>
+				
+
+</http:request>
+					<logger level="INFO" doc:name="Logger" doc:id="5075986f-a5ed-4a92-8688-4fc1aa23d2ce" message='#["Purge Client asset for " ++ payload.name ++ " successfully completed"]'/>
+				</when>
+			<otherwise>
+					<logger level="INFO" doc:name="Logger" doc:id="9b76eb0a-6706-4688-af73-bdc823819fb9" message='#["Purge Client asset cannot continue. Client " ++ payload.name ++ " not present in the source environment"]'/>
+				</otherwise>
+			</choice>
+		</parallel-foreach>
+		<logger level="INFO" doc:name="Logger" doc:id="afadb50b-a099-4b42-80c2-46f576b13996" message='#["Anypoint MQ Client Asset Purge completed for " ++ sizeOf(vars.amqClients) ++ " clients"]'/>
+	</sub-flow>
+
+</mule>

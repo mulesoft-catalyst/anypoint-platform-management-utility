@@ -1,0 +1,403 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+	
+	<sub-flow name="get-info-common-sub-flow" doc:id="d572f9f5-ba8a-44c8-878f-b4b2c169dc92" >
+		<http:request method="GET" doc:name="Get Master Org" doc:id="960e246c-d8c0-43bd-8ee2-61cf05162193" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.profile}">
+			<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+		</http:request>
+		<http:request method="GET" doc:name="Get Hierarchy" doc:id="49704a46-9f26-4f1d-ac81-ad60750e87f8" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.hierarchy}">
+			<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+			<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId" : payload.user.organizationId
+}]]]></http:uri-params>
+		</http:request>
+		<ee:transform doc:name="Transform BG Info" doc:id="016bd386-cccd-4022-a2bd-1d108e1dd4d3">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+
+var reducedOrg = (org) -> {
+    id: org.id,
+    name: org.name,
+    available: {
+    	vCoresProduction: org.entitlements.vCoresProduction.assigned - org.entitlements.vCoresProduction.reassigned,
+    	vCoresSandbox: org.entitlements.vCoresSandbox.assigned - org.entitlements.vCoresSandbox.reassigned,
+    	vCoresDesign: org.entitlements.vCoresDesign.assigned - org.entitlements.vCoresDesign.reassigned,
+    	staticIps: org.entitlements.staticIps.assigned - org.entitlements.staticIps.reassigned
+    }
+}
+
+var getOrgAndSubOrgs = (payload) -> (
+    [reducedOrg(payload)] ++ flatten(payload.subOrganizations map getOrgAndSubOrgs($))
+)
+
+---
+getOrgAndSubOrgs(payload) filter ((item, index) ->  
+    ((sizeOf(vars.businessGroupFilter default []) == 0) or (vars.businessGroupFilter contains item.name)) 
+)]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<parallel-foreach doc:name="Parallel For Each" doc:id="740fd9e0-d0b9-4b2c-9094-708d05f96ee8" collection="#[payload]" maxConcurrency="${parallel.foreach.maxConcurrency}">
+			<http:request method="GET" doc:name="Get Environments" doc:id="62ae277c-979a-4e17-a171-33ebef10dc4c" config-ref="api_httpRequestConfig" path="${anypoint.platform.api.path.environments}" target="envDetails" targetValue="#[payload.data]">
+				<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.authorizationHeader
+}]]]></http:headers>
+				<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"organizationId" : payload.id
+}]]]></http:uri-params>
+				<http:response-validator>
+					<http:success-status-code-validator values="200..499" />
+				</http:response-validator>
+			</http:request>
+			<choice doc:name="Choice" doc:id="490256cb-a89b-4e9a-928e-b8845f44f84f">
+				<when expression="#[vars.envDetails != null]">
+					<ee:transform doc:name="Transform Env Info" doc:id="c75e663a-2a1f-4603-ade9-1f42c51ba99f">
+						<ee:message>
+							<ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+payload update {
+	case .environments! -> vars.envDetails map ({
+		"id": $.id,
+		"name": $.name
+}) filter ((item, index) ->  
+    ((sizeOf(vars.environmentFilter default []) == 0) or (vars.environmentFilter contains item.name)) 
+)
+}
+]]></ee:set-payload>
+						</ee:message>
+					</ee:transform>
+				</when>
+				<otherwise>
+					<ee:transform doc:name="No Env Info" doc:id="5d6496de-8d50-4a73-a609-681627649e9a">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+payload update {
+	case .environments! -> []
+}
+
+]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+				</otherwise>
+			</choice>
+		</parallel-foreach>
+		<ee:transform doc:name="Extract Info from Composite Structure" doc:id="d04281b3-05b1-4979-9eb4-31bda0d09190">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+{
+	"businessGroups": payload map (
+		($.payload)
+	)	
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</sub-flow>
+	
+	<flow name="get-info-flow" doc:id="36c790bd-116b-4b60-95db-528a1d679f19" >
+		<logger level="INFO" doc:name="Logger" doc:id="ba4d0819-e528-4b53-b135-f5957b680e4c" message="Get Info Flow - Entry"/>
+		<flow-ref doc:name="Get Info (Common)" doc:id="286fdf58-fb88-4d1a-9a46-71dbea018b67" name="get-info-common-sub-flow" />
+		<choice doc:name="Choice" doc:id="7fadbbac-6590-4909-bc98-2c20ef11de1e" >
+			<when expression="#[vars.acceptHeader == 'application/csv']">
+				<ee:transform doc:name="Transform Message" doc:id="7b8fb9a8-a8cd-4fe0-8edc-2bd2763cf16f" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"businessGroups": flatten(payload.businessGroups map(bg, index) -> (
+						bg.environments map ({
+								"id": bg.id,
+								"name": bg.name,
+								"available.vCoresProduction": bg.available.vCoresProduction,
+								"available.vCoresSandbox": bg.available.vCoresSandbox,
+								"available.vCoresDesign": bg.available.vCoresDesign,
+								"available.staticIps": bg.available.staticIps,
+								"environments.id": $.id,
+								"environments.name": $.name
+						})
+					))
+}
+]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</when>
+		</choice>
+		<flow-ref doc:name="Common Completion" doc:id="e5c19252-b6cc-4142-a804-22d889cf6280" name="common-completion-sub-flow"/>
+		<logger level="INFO" doc:name="Logger" doc:id="f2946f3f-59b7-4f10-bed9-e54df4f1f476" message="Get Info Flow - Complete"/>
+		<error-handler ref="common-anypoint-platform-management-error-handler" />        
+	</flow>
+	<flow name="post-assets-migrate-flow" doc:id="b7382d22-ecce-4f30-9860-55f313e8b40c" >
+		<logger level="INFO" doc:name="Logger" doc:id="fbbbc998-6b57-465e-96d8-0b3c07bbe0c8" message="Start Asset Migration processing"/>
+		<set-variable value='#[(payload.fromBusinessGroup ++ "**" ++ payload.toBusinessGroup) splitBy "**"]' doc:name="Set Business Group Filter" doc:id="03456ff7-d675-4cc1-8b3d-df86baf09769" variableName="businessGroupFilter" />
+		<set-variable value='#[(payload.environmentSpecificAssets.fromEnvironment default "" ++ "**" ++ payload.environmentSpecificAssets.toEnvironment default "") splitBy "**"]' doc:name="Set Environment Filter" doc:id="6b1e32a9-8319-45a4-8207-a7009f8f49bd" variableName="environmentFilter"/>
+		<flow-ref doc:name="Get Info (Common)" doc:id="dfc61a2f-9167-49e6-9ba9-d8b1c76a21fb" name="get-info-common-sub-flow" target="orgInfo" />
+		<ee:transform doc:name="Set BG &amp; Env Ids" doc:id="a371bd12-4297-4a78-8e53-cca0abf64fa0">
+					<ee:message>
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable variableName="fromBGId"><![CDATA[%dw 2.0
+output application/java
+---
+(vars.orgInfo.businessGroups filter ($.name == payload.fromBusinessGroup))[0].id]]></ee:set-variable>
+						<ee:set-variable variableName="toBGId"><![CDATA[%dw 2.0
+output application/java
+---
+(vars.orgInfo.businessGroups filter ($.name == payload.toBusinessGroup))[0].id]]></ee:set-variable>
+				<ee:set-variable variableName="fromEnvId" ><![CDATA[%dw 2.0
+output application/java
+---
+((vars.orgInfo.businessGroups filter 
+	($.name == payload.fromBusinessGroup))[0].environments filter 
+		($.name == payload.environmentSpecificAssets.fromEnvironment default ""))[0].id]]></ee:set-variable>
+				<ee:set-variable variableName="toEnvId" ><![CDATA[%dw 2.0
+output application/java
+---
+((vars.orgInfo.businessGroups filter 
+	($.name == payload.toBusinessGroup))[0].environments filter 
+		($.name == payload.environmentSpecificAssets.toEnvironment default ""))[0].id]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+		<choice doc:name="Choice" doc:id="83af1edf-7cc4-4f39-9f5d-2af31263fee1" >
+			<when expression="#[vars.fromBGId == null or vars.toBGId == null]">
+				<raise-error doc:name="Incorrect Business Group Information" doc:id="a1e6a3ef-9833-4fed-8107-b3848ac4ccd9" type="AP_MGMT:INCORRECT_BG_INFO" description="No matching Business Group found for the specified request"/>
+			</when>
+		</choice>
+		<choice doc:name="Choice" doc:id="201b0dac-0766-4d5d-b1cd-85225958f6a1" >
+			<when expression="#[(vars.fromEnvId == null or vars.toEnvId == null) and (payload.environmentSpecificAssets.apiManagerAssetName != null or payload.environmentSpecificAssets.runtimeManager.cloudHubAssetName != null or payload.environmentSpecificAssets.runtimeManagerRTFAssetName != null)]" >
+				<raise-error doc:name="Incorrect Environment Information" doc:id="b584295b-62ef-4d65-a25b-a13e5ad22ca8" type="AP_MGMT:INCORRECT_ENV_INFO" description="No matching Environment found for the specified request"/>			
+			</when>
+		</choice>
+		<choice doc:name="Choice" doc:id="c19b4e7b-cfe9-485b-b035-9f53620721d6" >
+			<when expression="#[payload.designCenterAssetName != null]">
+				<flow-ref doc:name="Migrate Assets - Design Center" doc:id="4b91f066-1736-4dbf-a10f-0314bfacd180" name="post-assets-migrate-designcenter-sub-flow" target="designCenterMigratedResponse"/>
+			</when>
+		</choice>
+		<choice doc:name="Choice" doc:id="fc23e696-faa4-410c-b549-ddd57b621a62" >
+			<when expression="#[payload.exchangeAssetName != null]">
+				<flow-ref doc:name="Migrate Assets - Exchange" doc:id="ad701cc6-cbcc-441d-888a-676d5ac00c8c" name="post-assets-migrate-exchange-sub-flow" target="exchangeMigratedResponse"/>
+			</when>
+		</choice>
+		<choice doc:name="Choice" doc:id="ef1bf7f5-fd69-4c13-99e1-e0fbe1ad0ad2" >
+			<when expression="#[payload.environmentSpecificAssets.apiManagerAssetName != null]">
+				<flow-ref doc:name="Migrate Assets - API Manager" doc:id="999995bc-ed6a-4bad-8cd2-050ba93e065f" name="post-assets-migrate-apimanager-sub-flow" target="apiManagerMigratedResponse"/>
+			</when>
+		</choice>
+		<choice doc:name="Choice" doc:id="a6802ce5-e846-4581-86e0-4f6503c2e8a3" >
+			<when expression="#[payload.environmentSpecificAssets.runtimeManager.cloudHubAssetName != null]">
+				<flow-ref doc:name="Migrate Assets - Runtime Manager (CloudHub)" doc:id="a4c89d4a-844c-408d-8ce9-835f55ca5e1f" name="post-assets-migrate-runtimemanager-cloudhub-sub-flow" target="runtimeManagerCloudHubMigratedResponse"/>
+			</when>
+		</choice>
+		<choice doc:name="Choice" doc:id="904b7dfd-c37a-4405-93d3-669543201c49" >
+			<when expression="#[payload.environmentSpecificAssets.runtimeManager.rtfAssetName != null]">
+				<flow-ref doc:name="Migrate Assets - Runtime Manager (RTF)" doc:id="d12f6d64-6667-4e50-8919-e975acca5c9b" name="post-assets-migrate-runtimemanager-rtf-sub-flow" target="runtimeManagerRTFMigratedResponse"/>
+			</when>
+		</choice>
+		<flow-ref doc:name="Common Completion" doc:id="92528406-2a08-419c-9805-563323e68064" name="common-completion-sub-flow"/>
+		<logger level="INFO" doc:name="Logger" doc:id="2ce46bf0-9414-42da-adec-19930e4082f6" message="End Asset Migration processing"/>	
+		<error-handler ref="common-anypoint-platform-management-error-handler" />        
+	</flow>
+	<flow name="post-assets-migrate-rollback-or-commit-flow" doc:id="ddedbb6a-f0cc-4bc9-a1a8-5ce535157e1f" >
+		<logger level="INFO" doc:name="Logger" doc:id="1de21ad6-8494-46ab-a3a6-d5544d481f51" message='#["Start Asset Migration " ++ vars.confirmationType ++ " processing"]'/>
+		<set-variable value='#[(payload.fromBusinessGroup ++ "**" ++ payload.toBusinessGroup) splitBy "**"]' doc:name="Set Business Group Filter" doc:id="11f3e4ad-93da-4885-8d7b-b9b464fe62b4" variableName="businessGroupFilter" />
+		<set-variable value='#[(payload.environmentSpecificAssets.fromEnvironment default "" ++ "**" ++ payload.environmentSpecificAssets.toEnvironment default "") splitBy "**"]' doc:name="Set Environment Filter" doc:id="466c181b-ddce-4ff2-99f1-09a04a478005" variableName="environmentFilter"/>
+		<flow-ref doc:name="Get Info (Common)" doc:id="fa37e0df-30da-453e-a94b-54e43d41fe68" name="get-info-common-sub-flow" target="orgInfo" />
+		<ee:transform doc:name="Set BG &amp; Env Ids" doc:id="cdc058c0-6a40-4d09-92d7-688c94b93d65">
+					<ee:message>
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable variableName="fromBGId"><![CDATA[%dw 2.0
+output application/java
+---
+(vars.orgInfo.businessGroups filter ($.name == payload.fromBusinessGroup))[0].id]]></ee:set-variable>
+						<ee:set-variable variableName="toBGId"><![CDATA[%dw 2.0
+output application/java
+---
+(vars.orgInfo.businessGroups filter ($.name == payload.toBusinessGroup))[0].id]]></ee:set-variable>
+				<ee:set-variable variableName="fromEnvId" ><![CDATA[%dw 2.0
+output application/java
+---
+((vars.orgInfo.businessGroups filter 
+	($.name == payload.fromBusinessGroup))[0].environments filter 
+		($.name == payload.environmentSpecificAssets.fromEnvironment default ""))[0].id]]></ee:set-variable>
+				<ee:set-variable variableName="toEnvId" ><![CDATA[%dw 2.0
+output application/java
+---
+((vars.orgInfo.businessGroups filter 
+	($.name == payload.toBusinessGroup))[0].environments filter 
+		($.name == payload.environmentSpecificAssets.toEnvironment default ""))[0].id]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+		<choice doc:name="Choice" doc:id="2cf14592-9353-46a4-a8a5-2a1b5fc87a9b" >
+			<when expression="#[vars.fromBGId == null or vars.toBGId == null]">
+				<raise-error doc:name="Incorrect Business Group Information" doc:id="38acaa45-c9d4-4656-87f5-129c14fb83a3" type="AP_MGMT:INCORRECT_BG_INFO" description="No matching Business Group found for the specified request"/>
+			</when>
+		</choice>
+		<choice doc:name="Choice" doc:id="846cdea1-b52d-48f0-9a7d-05d972ff1856" >
+			<when expression="#[(vars.fromEnvId == null or vars.toEnvId == null) and (payload.environmentSpecificAssets.apiManagerAssetName != null or payload.environmentSpecificAssets.runtimeManager.cloudHubAssetName != null or payload.environmentSpecificAssets.runtimeManagerRTFAssetName != null)]" >
+				<raise-error doc:name="Incorrect Environment Information" doc:id="0b8741e9-d33a-45c7-9c04-fb6eb6b27d41" type="AP_MGMT:INCORRECT_ENV_INFO" description="No matching Environment found for the specified request"/>			
+			</when>
+		</choice>
+		<choice doc:name="Choice" doc:id="f7f59116-3f07-4740-bb67-c2d562f43d23">
+			<when expression="#[payload.environmentSpecificAssets.runtimeManager.rtfAssetName != null]">
+				<flow-ref doc:name="Migrate Assets Rollback Or Commit - Runtime Manager (RTF)" doc:id="1bdf6524-35d1-4bfe-bb4d-1c7c9031512c" name="post-assets-migrate-rollback-or-commit-runtimemanager-rtf-sub-flow" target="runtimeManagerRTFMigratedResponse" />
+			</when>
+		</choice>
+		<choice doc:name="Choice" doc:id="127d89f9-c389-4815-9249-6f2ef2447a58">
+			<when expression="#[payload.environmentSpecificAssets.runtimeManager.cloudHubAssetName != null]">
+				<flow-ref doc:name="Migrate Assets Rollback Or Commit - Runtime Manager (CloudHub)" doc:id="be6938e1-4ccb-40dc-9954-90d87dc04ca4" name="post-assets-migrate-rollback-or-commit-runtimemanager-cloudhub-sub-flow" target="runtimeManagerCloudHubMigratedResponse" />
+			</when>
+		</choice>
+		<choice doc:name="Choice" doc:id="9c1d3408-b769-4696-8dda-3e2c059040f2">
+			<when expression="#[payload.environmentSpecificAssets.apiManagerAssetName != null]">
+				<flow-ref doc:name="Migrate Assets Rollback Or Commit - API Manager" doc:id="5dc32a84-f407-4cb6-a89e-b6953157dfa5" name="post-assets-migrate-rollback-or-commit-apimanager-sub-flow" target="apiManagerMigratedResponse" />
+			</when>
+		</choice>
+		<choice doc:name="Choice" doc:id="74958aec-e7ec-43b5-bbae-ac16f69f44c5">
+			<when expression="#[payload.exchangeAssetName != null]">
+				<flow-ref doc:name="Migrate Assets Rollback Or Commit - Exchange" doc:id="ca3e1d8f-5db5-43f7-8de2-5e953c5d1874" name="post-assets-migrate-rollback-or-commit-exchange-sub-flow" target="exchangeMigratedResponse" />
+			</when>
+		</choice>
+		<choice doc:name="Choice" doc:id="f3606148-ac7c-4368-bac6-06b414d02d0a" >
+			<when expression="#[payload.designCenterAssetName != null]">
+				<flow-ref doc:name="Migrate Assets Rollback Or Commit - Design Center" doc:id="dc2a6438-f7e1-4b0c-be39-31fc7324370e" name="post-assets-migrate-rollback-or-commit-designcenter-sub-flow" target="designCenterMigratedResponse"/>
+			</when>
+		</choice>
+		<flow-ref doc:name="Common Completion" doc:id="98c0d745-7368-48c1-bb3b-700b1eda0b62" name="common-completion-sub-flow"/>
+		<logger level="INFO" doc:name="Logger" doc:id="262e6d63-bf9e-4c66-b56a-88f9e72ad405" message='#["End Asset Migration " ++ vars.confirmationType ++ " processing"]'/>
+		<error-handler ref="common-anypoint-platform-management-error-handler" />        
+	</flow>
+	<flow name="post-assets-copy-flow" doc:id="4432c54d-9ab6-4796-9cf8-bb85b7f606bc" >
+		<logger level="INFO" doc:name="Logger" doc:id="3227320e-d6d9-40ea-99d8-46792b02e874" message="Start Asset Copy processing"/>
+		<set-variable value='#[(payload.fromBusinessGroup ++ "**" ++ payload.toBusinessGroup) splitBy "**"]' doc:name="Set Business Group Filter" doc:id="761e6351-8fed-46df-a1ab-bf4de5fcd699" variableName="businessGroupFilter" />
+		<set-variable value='#[(payload.environmentSpecificAssets.fromEnvironment default "" ++ "**" ++ payload.environmentSpecificAssets.toEnvironment default "") splitBy "**"]' doc:name="Set Environment Filter" doc:id="5658d5b0-01fb-4eb4-bf18-edaf69be2ca2" variableName="environmentFilter"/>
+		<flow-ref doc:name="Get Info (Common)" doc:id="5a1ffaf5-fc0c-4b06-97e1-eca0b257ad22" name="get-info-common-sub-flow" target="orgInfo" />
+		<ee:transform doc:name="Set BG &amp; Env Ids" doc:id="a478ac88-50ee-4154-8615-9c01bbbc4fe5">
+					<ee:message>
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable variableName="fromBGId"><![CDATA[%dw 2.0
+output application/java
+---
+(vars.orgInfo.businessGroups filter ($.name == payload.fromBusinessGroup))[0].id]]></ee:set-variable>
+						<ee:set-variable variableName="toBGId"><![CDATA[%dw 2.0
+output application/java
+---
+(vars.orgInfo.businessGroups filter ($.name == payload.toBusinessGroup))[0].id]]></ee:set-variable>
+				<ee:set-variable variableName="fromEnvId" ><![CDATA[%dw 2.0
+output application/java
+---
+((vars.orgInfo.businessGroups filter 
+	($.name == payload.fromBusinessGroup))[0].environments filter 
+		($.name == payload.environmentSpecificAssets.fromEnvironment default ""))[0].id]]></ee:set-variable>
+				<ee:set-variable variableName="toEnvId" ><![CDATA[%dw 2.0
+output application/java
+---
+((vars.orgInfo.businessGroups filter 
+	($.name == payload.toBusinessGroup))[0].environments filter 
+		($.name == payload.environmentSpecificAssets.toEnvironment default ""))[0].id]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+		<choice doc:name="Choice" doc:id="32a26d6d-8e3e-4220-8745-7bf1f082add7" >
+			<when expression="#[vars.fromBGId == null or vars.toBGId == null]">
+				<raise-error doc:name="Incorrect Business Group Information" doc:id="648355f8-4af0-405d-89e2-31ca78cc2d59" type="AP_MGMT:INCORRECT_BG_INFO" description="No matching Business Group found for the specified request"/>
+			</when>
+		</choice>
+		<choice doc:name="Choice" doc:id="a7af462d-0792-4c01-a656-b435818ed0f1" >
+			<when expression="#[(vars.fromEnvId == null or vars.toEnvId == null) and (payload.environmentSpecificAssets.apiManagerAssetName != null or payload.environmentSpecificAssets.runtimeManager.cloudHubAssetName != null or payload.environmentSpecificAssets.runtimeManagerRTFAssetName != null)]" >
+				<raise-error doc:name="Incorrect Environment Information" doc:id="8fa79874-78a9-46e0-9aef-bf1a6a2cae62" type="AP_MGMT:INCORRECT_ENV_INFO" description="No matching Environment found for the specified request"/>			
+			</when>
+		</choice>
+		<choice doc:name="Choice" doc:id="ea346641-fb84-4863-9d93-48ff886e94d0" >
+			<when expression="#[sizeOf(payload.environmentSpecificAssets.anypointMQ.destinations default []) > 0]">
+				<flow-ref doc:name="Copy Assets - Anypoint MQ Destinations" doc:id="b2ed8dee-4f5c-45b5-80db-a517dd5cafec" name="post-assets-copy-anypointmqdestinations-sub-flow" target="anypointMQDestinationsCopyResponse"/>
+			</when>
+		</choice>
+		<choice doc:name="Choice" doc:id="36f066f2-7323-4216-b016-d768f60234da" >
+			<when expression="#[sizeOf(payload.environmentSpecificAssets.anypointMQ.clients default []) > 0]">
+				<flow-ref doc:name="Copy Assets - Anypoint MQ Clients" doc:id="548172d0-f091-45c8-b584-d4d4d9fc7ff3" name="post-assets-copy-anypointmqclients-sub-flow" target="anypointMQClientsCopyResponse"/>
+			</when>
+		</choice>
+		<flow-ref doc:name="Common Completion" doc:id="a9815b3c-983e-4fd6-9cff-87da21d9050f" name="common-completion-sub-flow"/>
+		<logger level="INFO" doc:name="Logger" doc:id="d278587f-0d76-454c-8043-07fd8fd1ba03" message="End Asset Copy processing"/>	
+		<error-handler ref="common-anypoint-platform-management-error-handler" />        
+	</flow>
+	<flow name="post-assets-purge-flow" doc:id="825a0047-a5b5-4e4f-97a6-a8dbce304747" >
+		<logger level="INFO" doc:name="Logger" doc:id="ea0f9311-3125-4ba0-9529-647bfce41552" message="Start Asset Purge processing"/>
+		<set-variable value='#[(payload.fromBusinessGroup ++ "**" ++ payload.toBusinessGroup) splitBy "**"]' doc:name="Set Business Group Filter" doc:id="d6c768fc-72db-4f81-a67a-df81b6ac8b53" variableName="businessGroupFilter" />
+		<set-variable value='#[(payload.environmentSpecificAssets.fromEnvironment default "" ++ "**" ++ payload.environmentSpecificAssets.toEnvironment default "") splitBy "**"]' doc:name="Set Environment Filter" doc:id="c25fc94a-f71c-4f8e-b265-6725305be8c7" variableName="environmentFilter"/>
+		<flow-ref doc:name="Get Info (Common)" doc:id="9c3352df-93e2-4d92-a797-e1bd11b065a9" name="get-info-common-sub-flow" target="orgInfo" />
+		<ee:transform doc:name="Set BG &amp; Env Ids" doc:id="dff829d2-9cc2-423a-b858-83698a58ed1d">
+					<ee:message>
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable variableName="fromBGId"><![CDATA[%dw 2.0
+output application/java
+---
+(vars.orgInfo.businessGroups filter ($.name == payload.fromBusinessGroup))[0].id]]></ee:set-variable>
+						<ee:set-variable variableName="toBGId"><![CDATA[%dw 2.0
+output application/java
+---
+(vars.orgInfo.businessGroups filter ($.name == payload.toBusinessGroup))[0].id]]></ee:set-variable>
+				<ee:set-variable variableName="fromEnvId" ><![CDATA[%dw 2.0
+output application/java
+---
+((vars.orgInfo.businessGroups filter 
+	($.name == payload.fromBusinessGroup))[0].environments filter 
+		($.name == payload.environmentSpecificAssets.fromEnvironment default ""))[0].id]]></ee:set-variable>
+				<ee:set-variable variableName="toEnvId" ><![CDATA[%dw 2.0
+output application/java
+---
+((vars.orgInfo.businessGroups filter 
+	($.name == payload.toBusinessGroup))[0].environments filter 
+		($.name == payload.environmentSpecificAssets.toEnvironment default ""))[0].id]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+		<choice doc:name="Choice" doc:id="59fbf06e-4ba4-4535-8f99-377dbede7335" >
+			<when expression="#[vars.fromBGId == null or vars.toBGId == null]">
+				<raise-error doc:name="Incorrect Business Group Information" doc:id="64a152b7-3e8c-415f-822d-f059d0504a56" type="AP_MGMT:INCORRECT_BG_INFO" description="No matching Business Group found for the specified request"/>
+			</when>
+		</choice>
+		<choice doc:name="Choice" doc:id="626f95c6-caed-45ee-aa82-cb665a2ab22a" >
+			<when expression="#[(vars.fromEnvId == null or vars.toEnvId == null) and (payload.environmentSpecificAssets.apiManagerAssetName != null or payload.environmentSpecificAssets.runtimeManager.cloudHubAssetName != null or payload.environmentSpecificAssets.runtimeManagerRTFAssetName != null)]" >
+				<raise-error doc:name="Incorrect Environment Information" doc:id="74bfc73a-a2f2-4346-8d80-44e1f27c13d1" type="AP_MGMT:INCORRECT_ENV_INFO" description="No matching Environment found for the specified request"/>			
+			</when>
+		</choice>
+		<choice doc:name="Choice" doc:id="eb8645b1-a1c8-432b-8e9a-408fd1344e5a" >
+			<when expression="#[sizeOf(payload.environmentSpecificAssets.anypointMQ.destinations default []) > 0]">
+				<flow-ref doc:name="Purge Assets - Anypoint MQ Destinations" doc:id="5eca0d2a-521c-4a9d-ab7e-621038604eda" name="post-assets-purge-anypointmqdestinations-sub-flow" target="anypointMQDestinationsPurgeResponse"/>
+			</when>
+		</choice>
+		<choice doc:name="Choice" doc:id="8379694c-10c2-4184-8451-64a63b152585" >
+			<when expression="#[sizeOf(payload.environmentSpecificAssets.anypointMQ.clients default []) > 0]">
+				<flow-ref doc:name="Purge Assets - Anypoint MQ Clients" doc:id="71ba7e57-0d6f-4b4f-b91f-4d1acc58bee3" name="post-assets-purge-anypointmqclients-sub-flow" target="anypointMQClientsPurgeResponse"/>
+			</when>
+		</choice>
+		<flow-ref doc:name="Common Completion" doc:id="b1fdb027-2e94-4e59-9c25-b46c61180da7" name="common-completion-sub-flow"/>
+		<logger level="INFO" doc:name="Logger" doc:id="5f721002-dd7f-477a-8287-0ac32d275f50" message="End Asset Purge processing"/>	
+		<error-handler ref="common-anypoint-platform-management-error-handler" />        
+	</flow>
+</mule>

@@ -1,0 +1,15 @@
+#%RAML 1.0 DataType
+description: The update applications status request for a list of business groups on a specific environment
+type: object
+properties:
+  runtimeVersion:
+    type: array
+    required: false
+    description: The runtime from and to versions which needs to be applied
+    items:
+      type: object
+      properties:
+        from:
+          type: string
+        to:
+          type: string
